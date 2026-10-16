@@ -1,6 +1,6 @@
 # Elevate STEM website
 
-The site for [elevatestemfoundation.org](https://elevatestemfoundation.org). React + Vite, hosted on GitHub Pages.
+The site for [joinelevatestem.org](https://joinelevatestem.org). React + Vite, hosted on GitHub Pages.
 
 ## Editing content
 

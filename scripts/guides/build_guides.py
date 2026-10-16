@@ -108,7 +108,7 @@ def brand(kind):
     return f'<div class="brand">{LOGO}<span>Elevate STEM</span><span class="kind">{kind}</span></div>'
 
 FOOTER = """<div style="width:100%;font-family:Georgia,serif;font-style:italic;font-size:8pt;color:#6d7484;padding:0 0.8in;display:flex;justify-content:space-between">
-<span>elevatestemfoundation.org</span><span><span class="pageNumber"></span> of <span class="totalPages"></span></span></div>"""
+<span>joinelevatestem.org</span><span><span class="pageNumber"></span> of <span class="totalPages"></span></span></div>"""
 
 async def main():
     out_pdf = ROOT / "public/guides"
