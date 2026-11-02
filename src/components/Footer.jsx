@@ -9,7 +9,7 @@ const Arrow = () => (
 );
 const WORD = "ELEVATE STEM";
 
-// A heap of glossy 3D mini logos at the very bottom that tumble in and pile up.
+// Glossy 3D mini logos that rain down from the top of the footer and pile up at the bottom.
 // The 3D and physics code only loads once the footer is close to the screen.
 function LogoPile() {
   const ref = useRef(null);
@@ -23,14 +23,21 @@ function LogoPile() {
       import("../motion/logoPile.js")
         .then(({ createLogoPile }) => {
           if (cancelled) return;
-          pile = createLogoPile(canvas, { src: asset("brand/logo-512.png"), reducedMotion });
+          const footer = canvas.parentElement;
+          pile = createLogoPile(canvas, {
+            src: asset("brand/logo-512.png"),
+            reducedMotion,
+            eventTarget: footer,
+            // the heap fills the space under the copyright line
+            pileHeight: () => parseFloat(getComputedStyle(footer).paddingBottom) + 40,
+          });
         })
         .catch(() => canvas.remove());
     }, { rootMargin: "600px 0px" });
     near.observe(canvas);
     return () => { cancelled = true; near.disconnect(); pile?.dispose(); };
   }, []);
-  return <canvas ref={ref} className="footer-pile" aria-hidden="true" />;
+  return <canvas ref={ref} className="footer-rain" aria-hidden="true" />;
 }
 
 export default function Footer() {

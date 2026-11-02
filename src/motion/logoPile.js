@@ -19,12 +19,14 @@ function roundedRect(size, r) {
   return s;
 }
 
-export function createLogoPile(canvas, { src, reducedMotion }) {
+// The canvas covers the whole footer so the logos rain down from its top edge (behind the text);
+// pileHeight() is how tall the heap at the bottom should get, and events come from the footer itself.
+export function createLogoPile(canvas, { src, reducedMotion, pileHeight = () => canvas.clientHeight, eventTarget = canvas }) {
   let disposed = false, raf = 0;
   let w = 0, h = 0;
   let started = false, visible = false;
   let queue = 0, nextDrop = 0;
-  let engine = null, bodies = [];
+  let engine = null, bodies = [], pileH = 300;
   const pointer = { x: -9999, y: -9999, active: false };
 
   // ───────── 3D setup ─────────
@@ -62,6 +64,10 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
 
   const tiles = new THREE.InstancedMesh(tileGeo, sideMat, MAX);
   const faces = new THREE.InstancedMesh(faceGeo, faceMat, MAX);
+  // per-tile brightness: tiles still falling behind the text are dimmed so the links stay readable
+  const tint = new THREE.InstancedBufferAttribute(new Float32Array(MAX * 3).fill(1), 3);
+  tiles.instanceColor = tint;
+  faces.instanceColor = tint;
   tiles.count = faces.count = 0;
   tiles.frustumCulled = faces.frustumCulled = false;
   scene.add(tiles, faces);
@@ -73,7 +79,9 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
     const small = w < 640;
     const min = small ? 30 : 42, max = small ? 48 : 72;
     const avg = (min + max) / 2;
-    const count = Math.round(((w * h) / (avg * avg)) * (small ? 0.5 : 0.5));
+    const ph = Math.min(h, pileHeight());
+    pileH = ph;
+    const count = Math.round(((w * ph) / (avg * avg)) * 0.6);
     return { min, max, count: Math.min(count, small ? 80 : MAX) };
   }
 
@@ -96,7 +104,7 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
     const { min, max } = sizes();
     for (let i = 0; i < n && queue > 0; i++, queue--) {
       const s = min + Math.random() * (max - min);
-      const b = Bodies.rectangle(s / 2 + Math.random() * (w - s), -s - Math.random() * 160, s, s, {
+      const b = Bodies.rectangle(s / 2 + Math.random() * (w - s), -s - Math.random() * 60, s, s, {
         chamfer: { radius: s * R }, restitution: 0.25, friction: 0.35, frictionAir: 0.012, density: 0.0015,
         angle: Math.random() * Math.PI * 2,
       });
@@ -121,7 +129,12 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
       m4.compose(v, q, sc);
       tiles.setMatrixAt(i, m4);
       faces.setMatrixAt(i, m4);
+      // full brightness once a tile reaches the pile area; dimmer the higher up it is
+      const k = Math.max(0, Math.min(1, (b.position.y - (h - pileH - 140)) / 140));
+      const lum = 0.28 + 0.72 * k;
+      tint.setXYZ(i, lum, lum, lum);
     }
+    tint.needsUpdate = true;
     tiles.count = faces.count = n;
     tiles.instanceMatrix.needsUpdate = faces.instanceMatrix.needsUpdate = true;
     renderer.render(scene, camera);
@@ -145,7 +158,7 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
     if (disposed || !visible) return;
     const dt = Math.min(now - (last || now), 32) || 16.6;
     last = now;
-    if (queue > 0 && now >= nextDrop) { drop(w < 640 ? 2 : 4); nextDrop = now + 45; }
+    if (queue > 0 && now >= nextDrop) { drop(w < 640 ? 1 : 2); nextDrop = now + (w < 640 ? 70 : 40); }
     push();
     Engine.update(engine, dt);
     draw();
@@ -186,7 +199,7 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
     if (!visible) return;
     if (!started) maybeStart();
     else if (!reducedMotion && !raf) { last = 0; raf = requestAnimationFrame(loop); }
-  }, { rootMargin: "0px 0px -15% 0px" });
+  }, { rootMargin: "0px 0px -25% 0px" });
   io.observe(canvas);
   const ro = new ResizeObserver(resize);
   ro.observe(canvas);
@@ -210,10 +223,11 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
       }
     }
   };
+  const onDownMaybe = (ev) => { if (!ev.target.closest("a, button")) onDown(ev); };
   if (!reducedMotion) {
-    canvas.addEventListener("pointermove", onMove);
-    canvas.addEventListener("pointerleave", onLeave);
-    canvas.addEventListener("pointerdown", onDown);
+    eventTarget.addEventListener("pointermove", onMove);
+    eventTarget.addEventListener("pointerleave", onLeave);
+    eventTarget.addEventListener("pointerdown", onDownMaybe);
   }
 
   return {
@@ -221,9 +235,9 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
       disposed = true;
       cancelAnimationFrame(raf);
       io.disconnect(); ro.disconnect();
-      canvas.removeEventListener("pointermove", onMove);
-      canvas.removeEventListener("pointerleave", onLeave);
-      canvas.removeEventListener("pointerdown", onDown);
+      eventTarget.removeEventListener("pointermove", onMove);
+      eventTarget.removeEventListener("pointerleave", onLeave);
+      eventTarget.removeEventListener("pointerdown", onDownMaybe);
       if (engine) { Composite.clear(engine.world, false); Engine.clear(engine); }
       tileGeo.dispose(); faceGeo.dispose(); sideMat.dispose(); faceMat.dispose(); tex.dispose();
       tiles.dispose(); faces.dispose(); envTex.dispose(); pmrem.dispose(); renderer.dispose();
