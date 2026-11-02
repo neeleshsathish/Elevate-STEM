@@ -72,7 +72,6 @@ export default function SkyHero() {
       </div>
 
       <div className="wrap sky-copy" ref={copyRef}>
-        <p className="sky-kicker" data-reveal="up" style={{ "--d": 0 }}>A student-run nonprofit</p>
         <SplitWords as="h1" delay={1}>Real STEM research starts in high school.</SplitWords>
         <p className="sky-lede" data-reveal="up" style={{ "--d": 7 }}>
           Free research guides, hands-on workshops, and science kits for kids who need them,

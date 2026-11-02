@@ -5,6 +5,7 @@ import ImpactSlider from "../components/ImpactSlider.jsx";
 import SkyHero from "../components/SkyHero.jsx";
 import SplitWords from "../motion/SplitWords.jsx";
 import JoinBand from "../components/JoinBand.jsx";
+import Experiment from "../components/Experiment.jsx";
 
 const PROGRAMS = [
   {
@@ -99,6 +100,8 @@ export default function Home() {
           </ul>
         </div>
       </section>
+
+      <Experiment />
 
       <section className="section">
         <div className="wrap">
