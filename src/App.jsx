@@ -9,7 +9,6 @@ import Partners from "./pages/Partners.jsx";
 import Sponsors from "./pages/Sponsors.jsx";
 import Donate from "./pages/Donate.jsx";
 import NotFound from "./pages/NotFound.jsx";
-import CursorTrail from "./motion/CursorTrail.jsx";
 import { scrollToTop } from "./motion/smoothScroll.js";
 
 // The PDF reader is loaded only when someone opens a guide, so the rest of the site stays fast.
@@ -41,7 +40,6 @@ export default function App() {
     <>
       <a className="skip-link" href="#main">Skip to content</a>
       {!isReader && <Header />}
-      <CursorTrail enabled={!isReader} />
       <main id="main" key={pathname} className="page-enter">
         <Routes>
           <Route path="/" element={<Home />} />

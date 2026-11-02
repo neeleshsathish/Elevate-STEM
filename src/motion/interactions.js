@@ -78,7 +78,7 @@ function startTilt() {
 }
 
 function startMagnetic() {
-  const SEL = ".btn, .impact-btn, .filter, .partner-pill, .social-btn";
+  const SEL = ".btn, .impact-btn, .filter, .partner-pill";
   let current = null;
   const release = (el) => {
     el.style.setProperty("--magx", "0px");

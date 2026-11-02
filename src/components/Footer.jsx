@@ -1,63 +1,71 @@
+import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { DISCORD, INSTAGRAM } from "../data.js";
-import Logo from "./Logo.jsx";
+import { DISCORD, INSTAGRAM, asset } from "../data.js";
 import { scrollToTopSmooth } from "../motion/smoothScroll.js";
 
 const Arrow = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8" /></svg>
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 16 16 8M10 8h6v6" /></svg>
 );
-const WORD = "ELEVATE STEM";
+
+// A strip of mini logos at the very bottom that tumble in and pile up.
+// The physics code only loads once the footer is close to the screen.
+function LogoPile() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    let pile = null, cancelled = false;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const near = new IntersectionObserver(([en]) => {
+      if (!en.isIntersecting) return;
+      near.disconnect();
+      import("../motion/logoPile.js").then(({ createLogoPile }) => {
+        if (cancelled) return;
+        pile = createLogoPile(canvas, { src: asset("brand/logo-256.webp"), reducedMotion });
+      });
+    }, { rootMargin: "600px 0px" });
+    near.observe(canvas);
+    return () => { cancelled = true; near.disconnect(); pile?.dispose(); };
+  }, []);
+  return <canvas ref={ref} className="footer-pile" aria-hidden="true" />;
+}
 
 export default function Footer() {
   return (
     <footer className="site-footer">
-      <div className="footer-glow" aria-hidden="true"><span /><span /></div>
-
-      <div className="wrap footer-grid">
-        <div className="footer-brand" data-reveal="up">
-          <Logo light />
-          <p>A student-run nonprofit making STEM research and college pathways open to everyone. Built by students, for students.</p>
-          <div className="footer-social">
-            <a className="social-btn" href={INSTAGRAM} target="_blank" rel="noreferrer">Instagram <Arrow /></a>
-            <a className="social-btn" href={DISCORD} target="_blank" rel="noreferrer">Discord <Arrow /></a>
-          </div>
+      <div className="wrap footer-cols">
+        <div className="fcol fcol-brand">
+          <Link to="/" className="footer-logo" aria-label="Elevate STEM home">
+            <img src={asset("brand/logo-256.webp")} alt="" width="56" height="56" />
+            <span>Elevate STEM</span>
+          </Link>
+          <p>Built by students, for students. A student-run nonprofit opening up STEM research to everyone.</p>
         </div>
-        <nav aria-label="Programs" data-reveal="up" style={{ "--d": 1 }}>
-          <h2>Programs</h2>
-          <Link to="/resources">Free guides</Link>
-          <Link to="/donate">STEM kit drive</Link>
-          <Link to="/sponsors">Sponsor a program</Link>
-        </nav>
-        <nav aria-label="Organization" data-reveal="up" style={{ "--d": 2 }}>
-          <h2>Organization</h2>
-          <Link to="/team">Team</Link>
-          <Link to="/partners">Partners</Link>
-          <Link to="/donate">Donate</Link>
-        </nav>
-        <nav aria-label="Community" data-reveal="up" style={{ "--d": 3 }}>
-          <h2>Community</h2>
-          <a href={DISCORD} target="_blank" rel="noreferrer">Discord server</a>
-          <a href={INSTAGRAM} target="_blank" rel="noreferrer">@elevatestem</a>
-        </nav>
+
+        <div className="fcol fcol-join">
+          <h2>Join 1,050+ students</h2>
+          <a className="fbtn fbtn-solid" href={DISCORD} target="_blank" rel="noreferrer">Join the Discord</a>
+          <h2>Follow along</h2>
+          <a className="fbtn fbtn-line" href={INSTAGRAM} target="_blank" rel="noreferrer">
+            Instagram <Arrow />
+          </a>
+        </div>
+
+        <div className="fcol fcol-links">
+          <nav aria-label="Footer">
+            <Link to="/resources">Free guides <Arrow /></Link>
+            <Link to="/team">Team <Arrow /></Link>
+            <Link to="/partners">Partners <Arrow /></Link>
+            <Link to="/sponsors">Sponsor a program <Arrow /></Link>
+            <Link to="/donate">Donate <Arrow /></Link>
+          </nav>
+          <p className="footer-fine">
+            © {new Date().getFullYear()} Elevate STEM. Our guides are free to read, print, and share.
+          </p>
+          <button type="button" className="to-top" onClick={scrollToTopSmooth}>Back to top ↑</button>
+        </div>
       </div>
 
-      <div className="footer-wordmark" data-reveal="words" aria-hidden="true">
-        {WORD.split("").map((ch, i) =>
-          ch === " " ? (
-            <span className="fw-space" key={i} />
-          ) : (
-            <span className="sw" key={i}><span className="sw-in" style={{ "--wi": i }}>{ch}</span></span>
-          )
-        )}
-      </div>
-
-      <div className="wrap footer-base">
-        <span>© {new Date().getFullYear()} Elevate STEM Foundation</span>
-        <button type="button" className="to-top" onClick={scrollToTopSmooth}>
-          Back to top
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
-        </button>
-      </div>
+      <LogoPile />
     </footer>
   );
 }
