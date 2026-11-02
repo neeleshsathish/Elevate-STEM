@@ -1,65 +1,80 @@
-// The footer's pile of mini Elevate STEM logos. They tumble in when the footer comes into view,
-// settle into a heap, and scatter away from the mouse (or a tap). Uses matter-js for the physics.
+// The footer's heap of mini Elevate STEM logos. Each one is a small glossy 3D tile (the same style as
+// the logo tile on the Team page). They tumble in when the footer comes into view, settle into a pile,
+// and scatter away from the mouse (or a tap). matter-js does the 2D physics; three.js draws the tiles.
 import Matter from "matter-js";
+import * as THREE from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 const { Engine, Bodies, Body, Composite } = Matter;
+const MAX = 240;
 
-// One logo drawn as a little rounded sticker (white edge + soft shadow), reused for every body.
-function makeSprite(img, px) {
-  const pad = Math.round(px * 0.14);
-  const c = document.createElement("canvas");
-  c.width = c.height = px + pad * 2;
-  const ctx = c.getContext("2d");
-  const r = px * 0.24;
-  const rr = (x, y, s, rad) => {
-    ctx.beginPath();
-    ctx.moveTo(x + rad, y);
-    ctx.arcTo(x + s, y, x + s, y + s, rad);
-    ctx.arcTo(x + s, y + s, x, y + s, rad);
-    ctx.arcTo(x, y + s, x, y, rad);
-    ctx.arcTo(x, y, x + s, y, rad);
-    ctx.closePath();
-  };
-  ctx.save();
-  ctx.shadowColor = "rgba(20, 33, 61, 0.28)";
-  ctx.shadowBlur = pad * 0.9;
-  ctx.shadowOffsetY = pad * 0.25;
-  rr(pad, pad, px, r);
-  ctx.fillStyle = "#fff";
-  ctx.fill();
-  ctx.restore();
-  const inset = px * 0.07;
-  ctx.save();
-  rr(pad + inset, pad + inset, px - inset * 2, r * 0.8);
-  ctx.clip();
-  ctx.drawImage(img, pad + inset, pad + inset, px - inset * 2, px - inset * 2);
-  ctx.restore();
-  return { canvas: c, pad };
+function roundedRect(size, r) {
+  const s = new THREE.Shape();
+  const x = -size / 2, y = -size / 2;
+  s.moveTo(x + r, y);
+  s.lineTo(x + size - r, y); s.quadraticCurveTo(x + size, y, x + size, y + r);
+  s.lineTo(x + size, y + size - r); s.quadraticCurveTo(x + size, y + size, x + size - r, y + size);
+  s.lineTo(x + r, y + size); s.quadraticCurveTo(x, y + size, x, y + size - r);
+  s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+  return s;
 }
 
 export function createLogoPile(canvas, { src, reducedMotion }) {
-  let disposed = false;
-  let raf = 0;
-  let engine = null;
-  let bodies = [];
-  let sprite = null;
-  let w = 0, h = 0, dpr = 1;
+  let disposed = false, raf = 0;
+  let w = 0, h = 0;
   let started = false, visible = false;
   let queue = 0, nextDrop = 0;
+  let engine = null, bodies = [];
   const pointer = { x: -9999, y: -9999, active: false };
-  const ctx = canvas.getContext("2d");
 
-  const img = new Image();
-  img.decoding = "async";
-  img.src = src;
+  // ───────── 3D setup ─────────
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  const scene = new THREE.Scene();
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environment = envTex;
+  scene.add(new THREE.HemisphereLight(0xdff0ff, 0x223355, 0.7));
+  const sun = new THREE.DirectionalLight(0xfff4e0, 1.4);
+  sun.position.set(-0.4, 1, 1.2);
+  scene.add(sun);
+  // pixel-sized orthographic camera: 1 unit = 1 CSS pixel, y pointing up
+  const camera = new THREE.OrthographicCamera(0, 1, 0, -1, -500, 500);
 
+  // one tile 1 unit across; every logo is an instance of it, scaled to its size
+  const R = 0.24, DEPTH = 0.2, BEVEL = 0.05;
+  const tileGeo = new THREE.ExtrudeGeometry(roundedRect(1 - BEVEL * 2, R - BEVEL), {
+    depth: DEPTH, bevelEnabled: true, bevelThickness: BEVEL, bevelSize: BEVEL, bevelSegments: 4, curveSegments: 12,
+  }).center();
+  const sideMat = new THREE.MeshPhysicalMaterial({ color: "#2c9468", roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.12 });
+  const faceGeo = new THREE.ShapeGeometry(roundedRect(1, R), 12);
+  const uv = faceGeo.attributes.uv, pos = faceGeo.attributes.position;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) + 0.5, pos.getY(i) + 0.5);
+  faceGeo.translate(0, 0, DEPTH / 2 + BEVEL + 0.002);
+  const tex = new THREE.TextureLoader().load(src, () => { textureReady = true; maybeStart(); });
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  // the face keeps the logo's true colors (same finish as the Team page tile); the glossy sides carry the shine
+  const faceMat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+  let textureReady = false;
+
+  const tiles = new THREE.InstancedMesh(tileGeo, sideMat, MAX);
+  const faces = new THREE.InstancedMesh(faceGeo, faceMat, MAX);
+  tiles.count = faces.count = 0;
+  tiles.frustumCulled = faces.frustumCulled = false;
+  scene.add(tiles, faces);
+
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+
+  // ───────── Physics ─────────
   function sizes() {
     const small = w < 640;
-    const min = small ? 30 : 42, max = small ? 46 : 70;
+    const min = small ? 30 : 42, max = small ? 48 : 72;
     const avg = (min + max) / 2;
-    // fill roughly the bottom half of the strip
-    const count = Math.round(((w * h) / (avg * avg)) * (small ? 0.5 : 0.55));
-    return { min, max, count: Math.min(count, small ? 90 : 220) };
+    const count = Math.round(((w * h) / (avg * avg)) * (small ? 0.5 : 0.5));
+    return { min, max, count: Math.min(count, small ? 80 : MAX) };
   }
 
   function build() {
@@ -69,27 +84,24 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
     const t = 120;
     Composite.add(engine.world, [
       Bodies.rectangle(w / 2, h + t / 2, w * 3, t, { isStatic: true }),
-      Bodies.rectangle(-t / 2, h / 2 - h, t, h * 4, { isStatic: true }),
-      Bodies.rectangle(w + t / 2, h / 2 - h, t, h * 4, { isStatic: true }),
+      Bodies.rectangle(-t / 2, -h / 2, t, h * 4, { isStatic: true }),
+      Bodies.rectangle(w + t / 2, -h / 2, t, h * 4, { isStatic: true }),
     ]);
     bodies = [];
-    const { count } = sizes();
-    queue = count;
+    queue = sizes().count;
     nextDrop = 0;
-    sprite = makeSprite(img, 128);
   }
 
   function drop(n) {
     const { min, max } = sizes();
     for (let i = 0; i < n && queue > 0; i++, queue--) {
       const s = min + Math.random() * (max - min);
-      const b = Bodies.rectangle(
-        s / 2 + Math.random() * (w - s),
-        -s - Math.random() * 160,
-        s, s,
-        { chamfer: { radius: s * 0.24 }, restitution: 0.25, friction: 0.35, frictionAir: 0.012, density: 0.0015, angle: Math.random() * Math.PI * 2 }
-      );
-      b.plugin.size = s;
+      const b = Bodies.rectangle(s / 2 + Math.random() * (w - s), -s - Math.random() * 160, s, s, {
+        chamfer: { radius: s * R }, restitution: 0.25, friction: 0.35, frictionAir: 0.012, density: 0.0015,
+        angle: Math.random() * Math.PI * 2,
+      });
+      // each tile leans a little toward or away from you, so you can see its thickness
+      b.plugin.tile = { s, tx: (Math.random() - 0.5) * 0.9, ty: (Math.random() - 0.5) * 0.9, z: bodies.length * 0.02 };
       Body.setAngularVelocity(b, (Math.random() - 0.5) * 0.2);
       bodies.push(b);
       Composite.add(engine.world, b);
@@ -97,29 +109,32 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
   }
 
   function draw() {
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-    const sc = sprite.canvas, full = sc.width, inner = full - sprite.pad * 2;
-    for (const b of bodies) {
-      const s = b.plugin.size;
-      const k = s / inner;
-      ctx.save();
-      ctx.translate(b.position.x, b.position.y);
-      ctx.rotate(b.angle);
-      ctx.drawImage(sc, (-full * k) / 2, (-full * k) / 2, full * k, full * k);
-      ctx.restore();
+    const n = Math.min(bodies.length, MAX);
+    for (let i = 0; i < n; i++) {
+      const b = bodies[i], t = b.plugin.tile;
+      // a tile bobbing along tilts more while it's moving, then settles back to its own lean
+      const spin = Math.max(-0.5, Math.min(0.5, b.angularVelocity * 3));
+      e.set(t.tx + spin, t.ty - spin, -b.angle);
+      q.setFromEuler(e);
+      v.set(b.position.x, -b.position.y, t.z);
+      sc.set(t.s, t.s, t.s);
+      m4.compose(v, q, sc);
+      tiles.setMatrixAt(i, m4);
+      faces.setMatrixAt(i, m4);
     }
+    tiles.count = faces.count = n;
+    tiles.instanceMatrix.needsUpdate = faces.instanceMatrix.needsUpdate = true;
+    renderer.render(scene, camera);
   }
 
-  // the mouse (or a finger) shoves nearby logos away from it
   function push() {
     if (!pointer.active) return;
-    const R = Math.min(170, w * 0.22);
+    const RAD = Math.min(170, w * 0.22);
     for (const b of bodies) {
       const dx = b.position.x - pointer.x, dy = b.position.y - pointer.y;
       const d = Math.hypot(dx, dy);
-      if (d > R || d < 1) continue;
-      const f = (1 - d / R) * 0.007 * b.mass;
+      if (d > RAD || d < 1) continue;
+      const f = (1 - d / RAD) * 0.007 * b.mass;
       Body.applyForce(b, b.position, { x: (dx / d) * f, y: (dy / d) * f - f * 0.6 });
     }
   }
@@ -142,10 +157,10 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
     if (!nw || !nh) return;
     const changed = Math.abs(nw - w) > 40 || Math.abs(nh - h) > 40;
     w = nw; h = nh;
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    if (started && changed) start(true);
+    renderer.setSize(w, h, false);
+    camera.left = 0; camera.right = w; camera.top = 0; camera.bottom = -h;
+    camera.updateProjectionMatrix();
+    if (started && changed) begin(true);
     else if (started) draw();
   }
 
@@ -153,46 +168,47 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
   function settleStatic() {
     while (queue > 0) drop(queue);
     for (let i = 0; i < 600; i++) Engine.update(engine, 16.6);
+    for (const b of bodies) Body.setAngularVelocity(b, 0);
     draw();
   }
 
-  function start(rebuild = false) {
-    if (!img.complete || !img.naturalWidth) { img.onload = () => start(rebuild); return; }
+  function begin(rebuild = false) {
     if (started && !rebuild) return;
     started = true;
     build();
     if (reducedMotion) { settleStatic(); return; }
     if (visible && !raf) { last = 0; raf = requestAnimationFrame(loop); }
   }
+  function maybeStart() { if (visible && textureReady && w) begin(); }
 
   const io = new IntersectionObserver(([en]) => {
     visible = en.isIntersecting;
-    if (visible) {
-      if (!started) start();
-      else if (!reducedMotion && !raf) { last = 0; raf = requestAnimationFrame(loop); }
-    }
+    if (!visible) return;
+    if (!started) maybeStart();
+    else if (!reducedMotion && !raf) { last = 0; raf = requestAnimationFrame(loop); }
   }, { rootMargin: "0px 0px -15% 0px" });
   io.observe(canvas);
-
   const ro = new ResizeObserver(resize);
   ro.observe(canvas);
   resize();
 
-  const toLocal = (e) => {
+  const toLocal = (ev) => {
     const r = canvas.getBoundingClientRect();
-    pointer.x = e.clientX - r.left; pointer.y = e.clientY - r.top;
+    pointer.x = ev.clientX - r.left; pointer.y = ev.clientY - r.top;
   };
-  const onMove = (e) => { toLocal(e); pointer.active = true; };
+  const onMove = (ev) => { toLocal(ev); pointer.active = true; };
   const onLeave = () => { pointer.active = false; };
-  const onDown = (e) => {
-    toLocal(e);
+  const onDown = (ev) => {
+    toLocal(ev);
     // a tap or click pops the logos under it upward
     for (const b of bodies) {
       const dx = b.position.x - pointer.x, dy = b.position.y - pointer.y;
       const d = Math.hypot(dx, dy);
-      if (d < 140) Body.setVelocity(b, { x: b.velocity.x + (dx / (d || 1)) * 6, y: b.velocity.y - (1 - d / 140) * 14 });
+      if (d < 140) {
+        Body.setVelocity(b, { x: b.velocity.x + (dx / (d || 1)) * 6, y: b.velocity.y - (1 - d / 140) * 14 });
+        Body.setAngularVelocity(b, (Math.random() - 0.5) * 0.4);
+      }
     }
-    if (reducedMotion) { for (let i = 0; i < 240; i++) Engine.update(engine, 16.6); draw(); }
   };
   if (!reducedMotion) {
     canvas.addEventListener("pointermove", onMove);
@@ -209,6 +225,8 @@ export function createLogoPile(canvas, { src, reducedMotion }) {
       canvas.removeEventListener("pointerleave", onLeave);
       canvas.removeEventListener("pointerdown", onDown);
       if (engine) { Composite.clear(engine.world, false); Engine.clear(engine); }
+      tileGeo.dispose(); faceGeo.dispose(); sideMat.dispose(); faceMat.dispose(); tex.dispose();
+      tiles.dispose(); faces.dispose(); envTex.dispose(); pmrem.dispose(); renderer.dispose();
     },
   };
 }
