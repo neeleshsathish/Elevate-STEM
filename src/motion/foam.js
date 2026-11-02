@@ -75,7 +75,7 @@ export function createFoam({ colors, origin, reducedMotion, onFull }) {
 
   const ps = [];
   let emitted = 0, t0 = performance.now(), raf = 0, draining = false, full = false, disposed = false;
-  let doneAt = 0;
+  let doneAt = 0, settleFrames = 0;
   let swell = 1;   // after the gush, the foam keeps expanding until it reaches the top of the screen
   const pointer = { x: -9999, y: -9999, on: false };
 
@@ -200,7 +200,9 @@ export function createFoam({ colors, origin, reducedMotion, onFull }) {
       const cov = coverage();
       if (cov < 0.99) swell = Math.min(2.6, swell + 0.006);
       // full once the screen is covered and the gush has had a moment to settle
-      if ((cov >= 0.99 && now - doneAt > 700) || now - t0 > 14000) { full = true; onFull?.(); }
+      settleFrames++;
+      // full once the screen is covered and the gush has settled a moment (or after ~10s of frames as a backstop)
+      if ((cov >= 0.99 && settleFrames > 40) || settleFrames > 600) { full = true; onFull?.(); }
     }
     if (draining && ps.every((p) => p.y - p.r > H || p.r < 2)) { dispose(); drainDone?.(); return; }
     raf = requestAnimationFrame(loop);
