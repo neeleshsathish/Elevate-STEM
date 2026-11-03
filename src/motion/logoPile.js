@@ -31,7 +31,7 @@ export function createLogoPile(canvas, { src, reducedMotion, pileHeight = () => 
 
   // ───────── 3D setup ─────────
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   const scene = new THREE.Scene();
@@ -87,7 +87,7 @@ export function createLogoPile(canvas, { src, reducedMotion, pileHeight = () => 
 
   function build() {
     if (engine) { Composite.clear(engine.world, false); Engine.clear(engine); }
-    engine = Engine.create({ gravity: { y: 1.1 } });
+    engine = Engine.create({ gravity: { y: 1.1 }, enableSleeping: true });
     engine.positionIterations = 8;
     const t = 120;
     Composite.add(engine.world, [
@@ -148,11 +148,12 @@ export function createLogoPile(canvas, { src, reducedMotion, pileHeight = () => 
       const d = Math.hypot(dx, dy);
       if (d > RAD || d < 1) continue;
       const f = (1 - d / RAD) * 0.007 * b.mass;
+      if (b.isSleeping) Matter.Sleeping.set(b, false);
       Body.applyForce(b, b.position, { x: (dx / d) * f, y: (dy / d) * f - f * 0.6 });
     }
   }
 
-  let last = 0;
+  let last = 0, drawnStill = false;
   function loop(now) {
     raf = 0;
     if (disposed || !visible) return;
@@ -161,7 +162,9 @@ export function createLogoPile(canvas, { src, reducedMotion, pileHeight = () => 
     if (queue > 0 && now >= nextDrop) { drop(w < 640 ? 1 : 2); nextDrop = now + (w < 640 ? 70 : 40); }
     push();
     Engine.update(engine, dt);
-    draw();
+    // once the pile has settled and nobody is touching it, skip drawing (the picture doesn't change)
+    const still = queue === 0 && !pointer.active && bodies.every((b) => b.isSleeping);
+    if (!still || !drawnStill) { draw(); drawnStill = still; }
     raf = requestAnimationFrame(loop);
   }
 
@@ -218,6 +221,7 @@ export function createLogoPile(canvas, { src, reducedMotion, pileHeight = () => 
       const dx = b.position.x - pointer.x, dy = b.position.y - pointer.y;
       const d = Math.hypot(dx, dy);
       if (d < 140) {
+        if (b.isSleeping) Matter.Sleeping.set(b, false);
         Body.setVelocity(b, { x: b.velocity.x + (dx / (d || 1)) * 6, y: b.velocity.y - (1 - d / 140) * 14 });
         Body.setAngularVelocity(b, (Math.random() - 0.5) * 0.4);
       }

@@ -30,23 +30,18 @@ function canvasTex(w, h, draw, opts = {}) {
   return t;
 }
 
-// white subway tiles with grey grout, each tile a slightly different white
-function tileTexture() {
-  return canvasTex(512, 512, (ctx, w, h) => {
-    ctx.fillStyle = "#c9ced6"; ctx.fillRect(0, 0, w, h);
-    const tw = 128, th = 64;
-    for (let row = 0; row < h / th; row++) {
-      const off = row % 2 ? tw / 2 : 0;
-      for (let x = -tw; x < w + tw; x += tw) {
-        const v = 244 + Math.floor(Math.random() * 8);
-        const g = ctx.createLinearGradient(0, row * th, 0, row * th + th);
-        g.addColorStop(0, `rgb(${v},${v},${v + 2})`);
-        g.addColorStop(1, `rgb(${v - 10},${v - 9},${v - 6})`);
-        ctx.fillStyle = g;
-        ctx.fillRect(x + off + 3, row * th + 3, tw - 6, th - 6);
-      }
+// soft blue pegboard wall with a window glow behind the flask (from the Lab design)
+function pegboardTexture() {
+  return canvasTex(1024, 576, (ctx, w, h) => {
+    ctx.fillStyle = "#dfe8f6"; ctx.fillRect(0, 0, w, h);
+    for (let y = 18; y < h; y += 36) for (let x = 18; x < w; x += 36) {
+      ctx.fillStyle = "#b2c4e2"; ctx.beginPath(); ctx.arc(x, y - 1, 4.2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#c9d7ee"; ctx.beginPath(); ctx.arc(x, y + 0.6, 4.2, 0, Math.PI * 2); ctx.fill();
     }
-  }, { repeat: [5, 3] });
+    const g = ctx.createRadialGradient(w * 0.5, h * 0.42, 0, w * 0.5, h * 0.42, w * 0.5);
+    g.addColorStop(0, "rgba(255,255,255,0.85)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  });
 }
 
 // printed white graduation marks on the flask, like a real Erlenmeyer
@@ -136,13 +131,13 @@ function makeBottle(kind, color) {
     g.add(cap);
   } else if (kind === "soap") {
     const pts = [[0, -1.2], [0.28, -1.2], [0.32, -1.15], [0.32, -0.42], [0.22, -0.2], [0.09, -0.1], [0.09, 0]].map(([x, y]) => new THREE.Vector2(x, y));
-    g.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 48), plastic("#f2cf3a", { transmission: 0.55, thickness: 0.5, roughness: 0.12, attenuationColor: new THREE.Color("#e2b11a"), attenuationDistance: 0.6 })));
+    g.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 48), plastic("#f2cf3a", { roughness: 0.12, transparent: true, opacity: 0.92 })));
     g.add(label(0.325, 0.5, -0.72));
     const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.11, 0.18, 24), plastic("#1f8f4e"));
     cap.position.y = 0.04;
     g.add(cap);
   } else if (kind === "dye") {
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.52, 32), plastic("#ffffff", { transmission: 0.4, thickness: 0.3 }));
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.52, 32), plastic("#ffffff", { transparent: true, opacity: 0.55 }));
     body.position.y = -0.4;
     const ink = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.4, 32), plastic(color, { roughness: 0.15 }));
     ink.position.y = -0.44;
@@ -166,15 +161,17 @@ function makeBottle(kind, color) {
 
 export function createLabScene(canvas, { reducedMotion }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#dfe3ea");
+  scene.background = new THREE.Color("#dfe8f6");
   const pmrem = new THREE.PMREMGenerator(renderer);
   const env = pmrem.fromScene(new RoomEnvironment(), 0.03).texture;
   scene.environment = env;
@@ -186,18 +183,18 @@ export function createLabScene(canvas, { reducedMotion }) {
   sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.camera.left = -4; sun.shadow.camera.right = 4; sun.shadow.camera.top = 5; sun.shadow.camera.bottom = -2;
   sun.shadow.radius = 6; sun.shadow.bias = -0.0005;
-  scene.add(sun, new THREE.HemisphereLight(0xf2f6ff, 0x2a2d33, 0.45));
+  scene.add(sun, new THREE.HemisphereLight(0xf2f6ff, 0x1c2a4c, 0.5));
 
   const camera = new THREE.PerspectiveCamera(28, 1, 0.1, 60);
   const camBase = new THREE.Vector3(0, 2.7, 11.2);
   const look = new THREE.Vector3(0.15, 1.95, 0);
 
   // ───────── Room: tiled wall, black epoxy lab bench, a plastic tray ─────────
-  const wall = new THREE.Mesh(new THREE.PlaneGeometry(16, 9), new THREE.MeshStandardMaterial({ map: tileTexture(), roughness: 0.35 }));
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(16, 9), new THREE.MeshBasicMaterial({ map: pegboardTexture(), toneMapped: false }));
   wall.position.set(0, 3.2, -3.2);
   wall.receiveShadow = true;
   scene.add(wall);
-  const bench = new THREE.Mesh(new THREE.BoxGeometry(16, 0.3, 7), new THREE.MeshPhysicalMaterial({ color: "#1d2024", roughness: 0.32, clearcoat: 0.5, clearcoatRoughness: 0.3 }));
+  const bench = new THREE.Mesh(new THREE.BoxGeometry(16, 0.3, 7), new THREE.MeshPhysicalMaterial({ color: "#0c1530", roughness: 0.38, clearcoat: 0.5, clearcoatRoughness: 0.3, envMapIntensity: 0.5 }));
   bench.position.set(0, -0.15, 0.2);
   bench.receiveShadow = true;
   scene.add(bench);
@@ -210,7 +207,7 @@ export function createLabScene(canvas, { reducedMotion }) {
   trayShape.lineTo(-tw / 2, -td / 2 + tr); trayShape.quadraticCurveTo(-tw / 2, -td / 2, -tw / 2 + tr, -td / 2);
   const tray = new THREE.Mesh(
     new THREE.ExtrudeGeometry(trayShape, { depth: 0.08, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 3 }),
-    new THREE.MeshPhysicalMaterial({ color: "#c9d6e6", roughness: 0.4, clearcoat: 0.4 })
+    new THREE.MeshPhysicalMaterial({ color: "#f7e7d8", roughness: 0.45, clearcoat: 0.4 })
   );
   tray.rotation.x = -Math.PI / 2;
   tray.position.y = -0.01;
@@ -390,17 +387,19 @@ export function createLabScene(canvas, { reducedMotion }) {
   }
 
   // ───────── Pouring stream ─────────
-  const streamMat = new THREE.MeshPhysicalMaterial({ color: "#ffffff", roughness: 0.05, transmission: 0.9, thickness: 0.2, ior: 1.33, attenuationColor: new THREE.Color("#ffffff"), attenuationDistance: 0.4 });
+  const streamMat = new THREE.MeshPhysicalMaterial({ color: "#ffffff", roughness: 0.05, clearcoat: 1, transparent: true, opacity: 0.85 });
   const stream = new THREE.Mesh(new THREE.BufferGeometry(), streamMat);
   stream.visible = false;
   scene.add(stream);
   let pourJob = null;
 
   // ───────── Layout & loop ─────────
-  let w = 1, h = 1;
+  let w = 1, h = 1, framesLeft = 3;
+  const lastCam = new THREE.Vector3(1e9, 0, 0);
   function resize() {
     w = Math.max(1, canvas.clientWidth); h = Math.max(1, canvas.clientHeight);
     renderer.setSize(w, h, false);
+    framesLeft = 3;
     camera.aspect = w / h;
     camera.fov = w / h < 0.9 ? 36 : 28;
     camera.updateProjectionMatrix();
@@ -506,7 +505,16 @@ export function createLabScene(canvas, { reducedMotion }) {
 
     camera.position.set(camBase.x + pointer.x * 0.5, camBase.y - pointer.y * 0.25, camBase.z);
     camera.lookAt(look);
-    renderer.render(scene, camera);
+    // only draw when something actually changed: a pour, rising liquid, bubbles, foam, or the camera moving
+    const busy = pourJob || foamT >= 0 || swirls.length || soapy || Math.abs(levelTo - levelNow) > 0.0005 || fizz > 1 ||
+      Math.abs(tintTo.r - tintNow.r) + Math.abs(tintTo.g - tintNow.g) + Math.abs(tintTo.b - tintNow.b) > 0.004 ||
+      camera.position.distanceToSquared(lastCam) > 1e-6 || framesLeft > 0;
+    if (busy) {
+      if (pourJob || foamT >= 0) renderer.shadowMap.needsUpdate = true;
+      renderer.render(scene, camera);
+      lastCam.copy(camera.position);
+      if (framesLeft > 0) framesLeft--;
+    }
     raf = requestAnimationFrame(loop);
   }
   buildLiquid(0);
@@ -521,9 +529,8 @@ export function createLabScene(canvas, { reducedMotion }) {
       bottle.rotation.y = -0.5;
       scene.add(bottle);
       const sc = kind === "dye" ? color : STREAM_COLOR[kind];
-      streamMat.attenuationColor.set(sc);
-      streamMat.color.set(kind === "peroxide" ? "#ffffff" : sc);
-      streamMat.transmission = kind === "peroxide" ? 0.95 : kind === "dye" ? 0.3 : 0.6;
+      streamMat.color.set(kind === "peroxide" ? "#dfefff" : sc);
+      streamMat.opacity = kind === "peroxide" ? 0.55 : 0.92;
       const from = new THREE.Vector3(3.6, 3.4, 0.4), at = new THREE.Vector3(0.5, NECK_Y + lift + 0.42, 0.05);
       const tilt = kind === "dye" ? 2.45 : 2.05;
       const thick = kind === "dye" ? 0.016 : kind === "soap" ? 0.03 : 0.04;
@@ -591,6 +598,7 @@ export function createLabScene(canvas, { reducedMotion }) {
     pause() { paused = true; cancelAnimationFrame(raf); raf = 0; },
     resume() { paused = false; clock.getDelta(); if (!raf) loop(); },
     reset() {
+      framesLeft = 3; renderer.shadowMap.needsUpdate = true;
       levelTo = 0; soapy = false; fizz = 1; foamT = -1; foam.visible = false; tip.visible = false;
       tintTo.set("#e6f3ff"); distTo = 0.42; cloudTo = 0.04;
     },

@@ -16,31 +16,30 @@ const DYES = [
 ];
 
 const STEPS = [
-  { id: "peroxide", title: "Pour in hydrogen peroxide", short: "Peroxide" },
-  { id: "soap", title: "Squeeze in dish soap", short: "Dish soap" },
-  { id: "dye", title: "Add food coloring", short: "Coloring" },
-  { id: "yeast", title: "Add the yeast", short: "Yeast" },
+  { id: "peroxide", title: "Pour in hydrogen peroxide", short: "Peroxide", amount: "½ cup" },
+  { id: "soap", title: "Squeeze in dish soap", short: "Dish soap", amount: "2 tbsp" },
+  { id: "dye", title: "Add food coloring", short: "Food coloring", amount: "Pick up to 3" },
+  { id: "yeast", title: "Add the yeast", short: "Yeast", amount: "1 packet" },
 ];
 
-// small shelf icons for the buttons
+// Shelf icons, from the "Elephant Toothpaste Lab" design
 function Icon({ id, color }) {
   if (id === "peroxide")
     return (
-      <svg viewBox="0 0 40 52" aria-hidden="true"><rect x="15" y="3" width="10" height="7" rx="2" fill="#fff" /><path d="M11 13h18a4 4 0 0 1 4 4v29a4 4 0 0 1-4 4H11a4 4 0 0 1-4-4V17a4 4 0 0 1 4-4Z" fill="#6a3b1e" /><rect x="11" y="24" width="18" height="12" rx="2" fill="#fff" /><rect x="11" y="26" width="18" height="3" fill="#2f6fd1" /></svg>
+      <svg viewBox="0 0 48 64" aria-hidden="true"><rect x="17" y="2" width="14" height="9" rx="2.5" fill="#f4f4f1" stroke="#14213d" strokeWidth="2" /><path d="M14 11h20l4 7v38a6 6 0 0 1-6 6H16a6 6 0 0 1-6-6V18Z" fill="#6b3a1c" stroke="#14213d" strokeWidth="2" /><rect x="10" y="28" width="28" height="18" fill="#ffffff" stroke="#14213d" strokeWidth="2" /><rect x="10" y="28" width="28" height="5" fill="#2f5fc4" /><path d="M15 38h12M15 42h8" stroke="#14213d" strokeWidth="1.6" strokeLinecap="round" /><path d="M15 16v8" stroke="#ffffff" strokeOpacity="0.5" strokeWidth="2.5" strokeLinecap="round" /></svg>
     );
   if (id === "soap")
     return (
-      <svg viewBox="0 0 40 52" aria-hidden="true"><path d="M17 2h6v7h-6z" fill="#22a046" /><path d="M14 9h12l4 8v28a5 5 0 0 1-5 5H15a5 5 0 0 1-5-5V17l4-8Z" fill="#f2c230" /><circle cx="17" cy="28" r="2.5" fill="#fff" opacity=".8" /></svg>
+      <svg viewBox="0 0 48 64" aria-hidden="true"><path d="M21 2h6v8h-6z" fill="#1f8f4e" stroke="#14213d" strokeWidth="2" /><path d="M16 10h16l6 9v36a7 7 0 0 1-7 7H17a7 7 0 0 1-7-7V19Z" fill="#f6d44a" stroke="#14213d" strokeWidth="2" /><rect x="10" y="30" width="28" height="16" fill="#1f8f4e" /><circle cx="31" cy="38" r="4" fill="#f6d44a" /><circle cx="18" cy="24" r="3" fill="#ffffff" fillOpacity="0.75" /><circle cx="24" cy="20" r="2" fill="#ffffff" fillOpacity="0.75" /></svg>
     );
   if (id === "dye")
     return (
-      <svg viewBox="0 0 40 52" aria-hidden="true"><path d="M20 2c3 5 6 8 6 12H14c0-4 3-7 6-12Z" fill="#fff" /><path d="M12 15h16a3 3 0 0 1 3 3v27a5 5 0 0 1-5 5H14a5 5 0 0 1-5-5V18a3 3 0 0 1 3-3Z" fill={color} /></svg>
+      <svg viewBox="0 0 30 42" aria-hidden="true"><path d="M15 1c3 5 5 8 5 11H10c0-3 2-6 5-11Z" fill="#ffffff" stroke="#14213d" strokeWidth="1.8" /><rect x="6" y="12" width="18" height="28" rx="5" fill={color} stroke="#14213d" strokeWidth="1.8" /><path d="M10 17v8" stroke="#ffffff" strokeOpacity="0.6" strokeWidth="2" strokeLinecap="round" /></svg>
     );
   return (
-    <svg viewBox="0 0 40 52" aria-hidden="true"><path d="M6 14h28l-2 32a4 4 0 0 1-4 4H12a4 4 0 0 1-4-4L6 14Z" fill="#fff" /><path d="M8 26h24l-1.5 20a3.5 3.5 0 0 1-3.5 3H13a3.5 3.5 0 0 1-3.5-3L8 26Z" fill="#caa36b" /></svg>
+    <svg viewBox="0 0 48 64" aria-hidden="true"><path d="M8 16h32l-3 40a6 6 0 0 1-6 6H17a6 6 0 0 1-6-6Z" fill="#eef4fb" stroke="#14213d" strokeWidth="2" /><path d="M10 32h28l-2 24a5 5 0 0 1-5 4H17a5 5 0 0 1-5-4Z" fill="#cf9f5e" /><path d="M10 32c4-3 7 2 10-1s7 2 10-1 6 2 8 1" stroke="#f3e5c8" strokeWidth="4" strokeLinecap="round" fill="none" /><path d="M6 16h36" stroke="#14213d" strokeWidth="2" strokeLinecap="round" /><circle cx="20" cy="46" r="1.8" fill="#8a6131" /><circle cx="27" cy="51" r="1.8" fill="#8a6131" /></svg>
   );
 }
-
 
 // A flat drawing of the same bench, used only if this device can't show 3D. It works the same way.
 function FlatLab({ ref }) {
@@ -245,6 +244,7 @@ export default function Experiment() {
                         </button>
                       ))}
                     </div>
+                    <span className="shelf-amount">{dyes.length ? `${dyes.length} of 3 added` : s.amount}</span>
                   </div>
                 ) : (
                   <button
@@ -254,8 +254,10 @@ export default function Experiment() {
                     disabled={!open(s.id)}
                     onClick={() => add(s.id)}
                   >
+                    {done[s.id] && <span className="shelf-check" aria-hidden="true">✓</span>}
                     <Icon id={s.id} />
                     <span className="shelf-label">{s.short}</span>
+                    <span className="shelf-amount">{done[s.id] ? "Added" : s.amount}</span>
                   </button>
                 )
               )}

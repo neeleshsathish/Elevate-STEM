@@ -59,7 +59,6 @@ export default function PageIntro({ title, kicker, scene = "atom", covers, actio
       </div>
       <div className="wrap intro-grid">
         <div className="intro-copy" ref={copyRef}>
-          {kicker && <p className="sky-kicker" data-reveal="up" style={{ "--d": 0 }}>{kicker}</p>}
           <SplitWords as="h1" delay={1}>{title}</SplitWords>
           {children && <p className="lede" data-reveal="up" style={{ "--d": 5 }}>{children}</p>}
           {actions && <div className="btn-row" data-reveal="up" style={{ "--d": 7 }}>{actions}</div>}
