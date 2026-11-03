@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import SplitWords from "../motion/SplitWords.jsx";
 import { lockScroll } from "../motion/smoothScroll.js";
@@ -41,6 +41,56 @@ function Icon({ id, color }) {
   );
 }
 
+
+// A flat drawing of the same bench, used only if this device can't show 3D. It works the same way.
+function FlatLab({ ref }) {
+  const [level, setLevel] = useState(0);
+  const [color, setColor] = useState("#cfe6fb");
+  const [soap, setSoapOn] = useState(false);
+  const [stream, setStream] = useState(null);
+  const [reacting, setReacting] = useState(false);
+  const neck = useRef(null);
+  useImperativeHandle(ref, () => ({
+    pour: (kind, c, to) => new Promise((done) => {
+      setStream(kind === "dye" ? c : kind === "soap" ? "#f2c230" : kind === "yeast" ? "#c79a5c" : "#cfe6fb");
+      setTimeout(() => setLevel(to), 300);
+      setTimeout(() => { setStream(null); done(); }, 1000);
+    }),
+    addDye: (hex) => setColor((cur) => (cur === "#cfe6fb" ? hex : cur)),
+    setSoap: (on) => setSoapOn(on),
+    react: () => new Promise((done) => { setReacting(true); setTimeout(done, 1300); }),
+    neckPoint: () => { const r = neck.current.getBoundingClientRect(); return { x: r.left, y: r.top }; },
+    pause() {}, resume() {}, dispose() {},
+    reset: () => { setLevel(0); setColor("#cfe6fb"); setSoapOn(false); setReacting(false); },
+  }), []);
+  const flaskPath = "M84 22v62L28 214a14 14 0 0 0 13 20h118a14 14 0 0 0 13-20L116 84V22Z";
+  return (
+    <div className={`flat-lab ${reacting ? "is-reacting" : ""}`}>
+      <div className="flat-flask">
+        {stream && <div className="flat-stream" style={{ "--pour": stream }}><span /></div>}
+        <svg viewBox="0 0 200 250" aria-hidden="true">
+          <defs><clipPath id="flat-in"><path d={flaskPath} /></clipPath></defs>
+          <path d={flaskPath} fill="rgba(226,238,252,0.5)" />
+          <g clipPath="url(#flat-in)">
+            <rect x="0" width="200" height="250" style={{ fill: color, transform: `translateY(${234 - level * 234}px)`, transition: "transform 0.8s ease, fill 0.6s" }} />
+            {soap && [60, 82, 100, 118, 140].map((x, i) => <circle key={i} className="flat-bubble" cx={x} cy={226} r={3} style={{ animationDelay: `${i * 0.4}s` }} />)}
+          </g>
+          <path d={flaskPath} fill="none" stroke="#14213d" strokeWidth="4" strokeLinejoin="round" />
+          {reacting && <g className="flat-puff" fill={color}><circle cx="100" cy="20" r="16" /><circle cx="88" cy="10" r="11" /><circle cx="113" cy="9" r="12" /></g>}
+        </svg>
+        <span className="flat-neck" ref={neck} />
+      </div>
+    </div>
+  );
+}
+
+function webglOK() {
+  try {
+    const c = document.createElement("canvas");
+    return !!(c.getContext("webgl2") || c.getContext("webgl"));
+  } catch { return false; }
+}
+
 export default function Experiment() {
   const [done, setDone] = useState({ peroxide: false, soap: false, yeast: false });
   const [dyes, setDyes] = useState([]);
@@ -59,13 +109,21 @@ export default function Experiment() {
     const io = new IntersectionObserver(([en]) => {
       if (!en.isIntersecting) return;
       io.disconnect();
-      import("../three/labScene.js")
-        .then(({ createLabScene }) => {
-          if (cancelled) return;
-          sceneRef.current = createLabScene(canvas, { reducedMotion: reduced });
-          setScene3d("ready");
-        })
-        .catch(() => !cancelled && setScene3d("failed"));
+      // use the 3D bench when the device can show it; otherwise the flat drawing does the same job
+      if (!webglOK()) { setScene3d("flat"); return; }
+      const load = (tries) =>
+        import("../three/labScene.js")
+          .then(({ createLabScene }) => {
+            if (cancelled) return;
+            sceneRef.current = createLabScene(canvas, { reducedMotion: reduced });
+            setScene3d("ready");
+          })
+          .catch(() => {
+            if (cancelled) return;
+            if (tries > 0) setTimeout(() => load(tries - 1), 800);
+            else setScene3d("flat");
+          });
+      load(1);
     }, { rootMargin: "500px 0px" });
     io.observe(canvas);
     return () => { cancelled = true; io.disconnect(); sceneRef.current?.dispose(); foamRef.current?.dispose(); lockScroll(false); };
@@ -81,7 +139,7 @@ export default function Experiment() {
     if (id === "dye") {
       const next = [...dyes, dye.hex];
       await s.pour("dye", dye.hex, levels.dye + next.length * 0.01);
-      s.setColor(next[0]);
+      s.addDye(dye.hex, next);
       setDyes(next);
     } else {
       await s.pour(id, null, levels[id]);
@@ -95,7 +153,7 @@ export default function Experiment() {
   async function erupt() {
     const s = sceneRef.current;
     setPhase("react");
-    await s.react(dyes[0]);
+    await s.react(dyes);
     setPhase("erupt");
     lockScroll(true);
     setTimeout(() => sceneRef.current?.pause(), 900);
@@ -127,7 +185,7 @@ export default function Experiment() {
   });
 
   const open = (id) =>
-    phase === "build" && !busy && scene3d === "ready" &&
+    phase === "build" && !busy && (scene3d === "ready" || scene3d === "flat") &&
     (id === "peroxide" ? !done.peroxide
       : id === "soap" ? done.peroxide && !done.soap
       : id === "dye" ? done.soap && !done.yeast && dyes.length < 3
@@ -163,8 +221,8 @@ export default function Experiment() {
         <div data-reveal="up" style={{ "--d": 2 }}>
           <div className={`lab-bench phase-${phase} is-${scene3d}`}>
             <div className="lab-stage">
-              <canvas ref={canvasRef} className="lab-canvas" aria-label="A glass flask on a lab bench" role="img" />
-              {scene3d === "failed" && <p className="lab-fallback">This experiment needs a browser with 3D graphics turned on.</p>}
+              <canvas ref={canvasRef} className="lab-canvas" aria-label="A glass flask on a lab bench" role="img" hidden={scene3d === "flat"} />
+              {scene3d === "flat" && <FlatLab ref={sceneRef} />}
               <p className="lab-status" aria-live="polite">{status}</p>
             </div>
 

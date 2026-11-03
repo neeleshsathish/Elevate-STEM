@@ -13,10 +13,10 @@ function makeSprite(color, px = 96) {
   const ctx = c.getContext("2d");
   const r = px / 2;
   // soft all the way out, so neighbouring blobs melt into one creamy mass instead of looking like balls
-  const g = ctx.createRadialGradient(r * 0.8, r * 0.72, 0, r, r, r);
-  g.addColorStop(0, mix(color, "#ffffff", 0.42));
-  g.addColorStop(0.45, mix(color, "#ffffff", 0.14));
-  g.addColorStop(0.7, hexA(color, 0.92));
+  const g = ctx.createRadialGradient(r * 0.85, r * 0.8, 0, r, r, r);
+  g.addColorStop(0, mix(color, "#ffffff", 0.3));
+  g.addColorStop(0.5, mix(color, "#ffffff", 0.1));
+  g.addColorStop(0.74, hexA(color, 0.95));
   g.addColorStop(1, hexA(color, 0));
   ctx.fillStyle = g;
   ctx.beginPath(); ctx.arc(r, r, r, 0, Math.PI * 2); ctx.fill();
@@ -181,13 +181,46 @@ export function createFoam({ colors, origin, reducedMotion, onFull }) {
     return n / hit.length;
   }
 
+  // real foam is made of countless tiny bubbles: a tile of micro-bubbles laid over the whole foam
+  const micro = (() => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 220;
+    const x = c.getContext("2d");
+    for (let i = 0; i < 260; i++) {
+      const px = Math.random() * 220, py = Math.random() * 220, r = 1.2 + Math.random() * Math.random() * 7;
+      // each bubble: a dim inner shadow and a bright rim, so the surface looks fizzy and wet
+      x.fillStyle = "rgba(20,33,61,0.07)";
+      x.beginPath(); x.arc(px, py, r, 0, Math.PI * 2); x.fill();
+      x.strokeStyle = "rgba(255,255,255,0.55)"; x.lineWidth = 0.8;
+      x.beginPath(); x.arc(px, py, r, Math.PI * 1.05, Math.PI * 1.75); x.stroke();
+      x.fillStyle = "rgba(255,255,255,0.7)";
+      x.beginPath(); x.arc(px - r * 0.35, py - r * 0.35, Math.max(0.5, r * 0.22), 0, Math.PI * 2); x.fill();
+    }
+    return ctx.createPattern(c, "repeat");
+  })();
+
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
+    ctx.globalCompositeOperation = "source-over";
     for (const p of ps) {
       const s = p.r * 2.2;
       ctx.drawImage(spriteFor(p.col), p.x - s / 2, p.y - s / 2, s, s);
     }
+    // only on top of the foam already drawn: micro-bubbles, then soft light from above for volume
+    ctx.globalCompositeOperation = "source-atop";
+    ctx.save();
+    ctx.translate(0, -((performance.now() / 90) % 220));
+    ctx.fillStyle = micro;
+    ctx.fillRect(0, 0, W, H + 220);
+    ctx.restore();
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "rgba(255,255,255,0.16)");
+    g.addColorStop(0.6, "rgba(255,255,255,0)");
+    g.addColorStop(1, "rgba(20,33,61,0.12)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = "source-over";
   }
 
   function loop(now) {

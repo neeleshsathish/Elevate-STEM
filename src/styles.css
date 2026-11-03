@@ -596,13 +596,27 @@ button { font: inherit; }
 .lab-safety { margin-top: 24px; font-size: 0.86rem; color: var(--ink-3); max-width: 30em; padding-left: 14px; border-left: 3px solid var(--highlight); }
 
 .lab-bench {
-  position: relative; overflow: hidden; background: #eef3fa; border: 2px solid var(--ink); border-radius: 26px;
+  position: relative; overflow: hidden; background: #dfe3ea; border: 2px solid var(--ink); border-radius: 26px;
   box-shadow: 0 28px 60px -34px rgba(20, 33, 61, 0.55);
 }
 .lab-stage { position: relative; }
 .lab-canvas { display: block; width: 100%; height: clamp(320px, 34vw, 430px); cursor: default; opacity: 0; transition: opacity 0.8s; }
 .lab-bench.is-ready .lab-canvas { opacity: 1; }
-.lab-fallback { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--ink-3); }
+.lab-canvas[hidden] { display: none; }
+/* flat drawing of the bench, used only on devices without 3D */
+.flat-lab { height: clamp(320px, 34vw, 430px); display: grid; place-items: center; background: linear-gradient(#eef1f5 0 62%, #1d2024 62%); }
+.flat-flask { position: relative; width: min(200px, 52%); margin-top: 30px; }
+.flat-flask svg { display: block; width: 100%; height: auto; overflow: visible; }
+.flat-neck { position: absolute; left: 50%; top: 8.8%; width: 1px; height: 1px; }
+.flat-stream { position: absolute; left: 50%; top: -60px; width: 9px; height: calc(60px + 34%); transform: translateX(-50%); }
+.flat-stream span { display: block; width: 100%; height: 100%; border-radius: 6px; background: var(--pour); transform-origin: top; animation: flat-pour 1s ease both; }
+@keyframes flat-pour { 0% { transform: scaleY(0); } 25%, 75% { transform: scaleY(1); } 100% { transform: scaleY(1) translateY(100%); opacity: 0; } }
+.flat-bubble { fill: rgba(255, 255, 255, 0.9); animation: flat-bub 2.2s ease-in infinite; }
+@keyframes flat-bub { 0% { transform: translateY(0); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(-100px); opacity: 0; } }
+.flat-lab.is-reacting svg { animation: flat-shake 0.12s linear infinite; }
+@keyframes flat-shake { 25% { transform: translateX(-1.5px) rotate(-0.6deg); } 75% { transform: translateX(1.5px) rotate(0.6deg); } }
+.flat-puff circle { stroke: rgba(20, 33, 61, 0.2); transform-box: fill-box; transform-origin: center bottom; animation: flat-puff 1.3s ease-out both; }
+@keyframes flat-puff { from { transform: scale(0) translateY(20px); } }
 .lab-status {
   position: absolute; left: 50%; top: 16px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 24px);
   padding: 8px 16px; border-radius: 999px; background: rgba(255, 255, 255, 0.85); border: 1px solid var(--line);
