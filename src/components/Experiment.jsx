@@ -37,7 +37,7 @@ function Icon({ id, color }) {
       <svg viewBox="0 0 30 42" aria-hidden="true"><path d="M15 1c3 5 5 8 5 11H10c0-3 2-6 5-11Z" fill="#ffffff" stroke="#14213d" strokeWidth="1.8" /><rect x="6" y="12" width="18" height="28" rx="5" fill={color} stroke="#14213d" strokeWidth="1.8" /><path d="M10 17v8" stroke="#ffffff" strokeOpacity="0.6" strokeWidth="2" strokeLinecap="round" /></svg>
     );
   return (
-    <svg viewBox="0 0 48 64" aria-hidden="true"><path d="M8 16h32l-3 40a6 6 0 0 1-6 6H17a6 6 0 0 1-6-6Z" fill="#eef4fb" stroke="#14213d" strokeWidth="2" /><path d="M10 32h28l-2 24a5 5 0 0 1-5 4H17a5 5 0 0 1-5-4Z" fill="#cf9f5e" /><path d="M10 32c4-3 7 2 10-1s7 2 10-1 6 2 8 1" stroke="#f3e5c8" strokeWidth="4" strokeLinecap="round" fill="none" /><path d="M6 16h36" stroke="#14213d" strokeWidth="2" strokeLinecap="round" /><circle cx="20" cy="46" r="1.8" fill="#8a6131" /><circle cx="27" cy="51" r="1.8" fill="#8a6131" /></svg>
+    <svg viewBox="0 0 48 64" aria-hidden="true"><path d="M8 7l4-3 4 3 4-3 4 3 4-3 4 3 4-3 4 3V57l-4 3-4-3-4 3-4-3-4 3-4-3-4 3-4-3Z" fill="#f2c879" stroke="#14213d" strokeWidth="2" strokeLinejoin="round" /><rect x="9" y="7" width="30" height="10" fill="#d9482b" /><rect x="13" y="25" width="22" height="20" rx="3" fill="#ffffff" stroke="#14213d" strokeWidth="1.6" /><text x="24" y="38" fontSize="7" fontWeight="800" textAnchor="middle" fill="#14213d" fontFamily="Figtree Variable, sans-serif">YEAST</text><path d="M33 4l5 4" stroke="#14213d" strokeWidth="1.4" strokeDasharray="2 2" /></svg>
   );
 }
 
@@ -129,7 +129,7 @@ export default function Experiment() {
   }, []);
 
   const current = !done.peroxide ? 0 : !done.soap ? 1 : !done.yeast ? (dyes.length ? 3 : 2) : 4;
-  const levels = { peroxide: 0.46, soap: 0.53, dye: 0.55, yeast: 0.64 };
+  const levels = { peroxide: 0.46, soap: 0.53, dye: 0.55, yeast: 0.6 };
 
   async function add(id, dye) {
     const s = sceneRef.current;
