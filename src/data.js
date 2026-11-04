@@ -98,7 +98,7 @@ export const TEAM = [
   {
     name: "Aayush Grover",
     role: "Co-Founder & Workshop Director",
-    photo: null, // add a photo to public/team/ and put "team/<file>" here
+    photo: "team/aayush-grover.jpg", // add a photo to public/team/ and put "team/<file>" here
     initials: "AG",
     bio: "Aayush co-founded Elevate STEM and runs its workshops, bringing in researchers, professors, and college students to talk with our community about research and college.",
   },
