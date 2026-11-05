@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { DISCORD, STATS, HUB_CARDS } from "../data.js";
 import SplitWords from "../motion/SplitWords.jsx";
+import { isSoftwareGL } from "../three/quality.js";
 import CountUp from "../motion/CountUp.jsx";
 import { scrollToElement } from "../motion/smoothScroll.js";
 
@@ -40,8 +41,9 @@ export default function SkyHero() {
   useEffect(() => {
     let disposed = false;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // The 3D code loads after the page is on screen, so the headline never waits for it.
-    import("../three/atomScene.js")
+    // The 3D only starts once the page has finished loading and the browser is idle,
+    // so the headline, buttons and stats are never held up by it.
+    const start = () => import("../three/atomScene.js")
       .then(({ createAtomScene }) =>
         createAtomScene(canvasRef.current, {
           cards: HUB_CARDS,
@@ -56,8 +58,14 @@ export default function SkyHero() {
         setStatus("ready");
       })
       .catch(() => !disposed && setStatus("failed"));
+    const idle = (fn) => (window.requestIdleCallback ? window.requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 300));
+    // no graphics chip: keep the painted sky instead of a 3D scene that would make the page lag
+    const kick = () => idle(() => { if (disposed) return; if (isSoftwareGL()) setStatus("failed"); else start(); });
+    if (document.readyState === "complete") kick();
+    else window.addEventListener("load", kick, { once: true });
     return () => {
       disposed = true;
+      window.removeEventListener("load", kick);
       sceneRef.current?.dispose();
       sceneRef.current = null;
     };

@@ -10,7 +10,12 @@ const pad = (n) => String(n).padStart(2, "0");
 // and the letter looks like paper instead of everything being cropped like a photo.
 function Frame({ p, eager }) {
   const img = (
-    <img src={asset(p.src)} alt={p.caption} draggable="false" loading={eager ? "eager" : "lazy"} decoding="async" />
+    <img
+      src={asset(p.src.replace(/\.webp$/, "-s.webp"))}
+      srcSet={p.w ? `${asset(p.src.replace(/\.webp$/, "-s.webp"))} ${p.sw}w, ${asset(p.src)} ${p.w}w` : undefined}
+      sizes={`(max-width: 900px) ${Math.round(300 * p.r)}px, ${Math.round(470 * p.r)}px`}
+      alt={p.caption} draggable="false" loading={eager ? "eager" : "lazy"} decoding="async"
+    />
   );
   if (p.kind === "screen")
     return (
@@ -110,13 +115,13 @@ export default function ImpactSlider() {
 
         <div className="splide impact-splide" ref={rootRef} aria-label="Photos of Elevate STEM's work">
           <div className="splide__track">
-            <ul className="splide__list">
+            <div className="splide__list">
               {IMPACT.map((p, i) => (
-                <li className="splide__slide impact-slide" key={p.src} style={{ "--r": p.r }}>
+                <div className="splide__slide impact-slide" key={p.src} style={{ "--r": p.r }}>
                   <Frame p={p} eager={i < 4} />
-                </li>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
         </div>
 

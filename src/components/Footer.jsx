@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { DISCORD, INSTAGRAM, asset } from "../data.js";
 import Logo from "./Logo.jsx";
+import { isSoftwareGL } from "../three/quality.js";
 import { scrollToTopSmooth } from "../motion/smoothScroll.js";
 
 const Arrow = () => (
@@ -20,6 +21,9 @@ function LogoPile() {
     const near = new IntersectionObserver(([en]) => {
       if (!en.isIntersecting) return;
       near.disconnect();
+      const idle = (fn) => (window.requestIdleCallback ? window.requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 100));
+      idle(() => {
+      if (cancelled || isSoftwareGL()) return;
       import("../motion/logoPile.js")
         .then(({ createLogoPile }) => {
           if (cancelled) return;
@@ -33,6 +37,7 @@ function LogoPile() {
           });
         })
         .catch(() => canvas.remove());
+      });
     }, { rootMargin: "600px 0px" });
     near.observe(canvas);
     return () => { cancelled = true; near.disconnect(); pile?.dispose(); };

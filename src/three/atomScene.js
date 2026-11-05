@@ -169,6 +169,9 @@ export async function createAtomScene(canvas, { cards, onSelect, onHoverChange, 
     ]);
   } catch { /* system font fallback */ }
 
+  // build in small steps with a breather in between, so the page never freezes while it starts
+  const breathe = () => new Promise((r) => (window.requestIdleCallback ? window.requestIdleCallback(() => r(), { timeout: 120 }) : setTimeout(r, 16)));
+  await breathe();
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -177,8 +180,10 @@ export async function createAtomScene(canvas, { cards, onSelect, onHoverChange, 
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
+  await breathe();
   const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   scene.environment = envTex;
+  await breathe();
 
   const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
   const camBase = new THREE.Vector3(0, 1.6, 14);
@@ -231,6 +236,7 @@ export async function createAtomScene(canvas, { cards, onSelect, onHoverChange, 
   const H = 1.62;
   const step = (Math.PI * 2) / cards.length;
   const arc = step * 0.86;
+  await breathe();
   const cardMeshes = cards.map((card, i) => {
     const geo = new THREE.CylinderGeometry(R, R, H, 40, 1, true, -arc / 2, arc);
     const mat = new THREE.MeshStandardMaterial({
@@ -255,6 +261,7 @@ export async function createAtomScene(canvas, { cards, onSelect, onHoverChange, 
   ring.add(ribbon);
 
   // clouds
+  await breathe();
   const clouds = [];
   [
     [12, 3.2, -12, 9], [17, 6.5, -20, 11], [-19, 6, -20, 10], [15, -0.5, -15, 9],
@@ -399,6 +406,7 @@ export async function createAtomScene(canvas, { cards, onSelect, onHoverChange, 
   }
   const onVis = () => { if (!document.hidden && !raf) { clock.getDelta(); quality.reset(); loop(); } };
   document.addEventListener("visibilitychange", onVis);
+  try { await breathe(); await renderer.compileAsync(scene, camera); await breathe(); } catch { /* compile on first frame instead */ }
   loop();
 
   return {

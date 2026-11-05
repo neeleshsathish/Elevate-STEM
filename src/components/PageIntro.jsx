@@ -3,6 +3,8 @@ import SplitWords from "../motion/SplitWords.jsx";
 
 // Sky header used at the top of every page: drifting clouds, the page title rising in
 // word by word, and a floating 3D object for the page on the right (below on phones).
+import { isSoftwareGL } from "../three/quality.js";
+
 export default function PageIntro({ title, kicker, scene = "atom", covers, actions, children }) {
   const canvasRef = useRef(null);
   const introRef = useRef(null);
@@ -12,6 +14,7 @@ export default function PageIntro({ title, kicker, scene = "atom", covers, actio
   useEffect(() => {
     let disposed = false, handle = null;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (isSoftwareGL()) return;
     import("../three/heroObjects.js")
       .then(({ createHeroObject }) => createHeroObject(canvasRef.current, { variant: scene, covers, reducedMotion }))
       .then((h) => {

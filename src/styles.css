@@ -466,11 +466,16 @@ button { font: inherit; }
 /* ───────── Join band: the logo's blue-to-green gradient ───────── */
 .join-band {
   position: relative; overflow: hidden; isolation: isolate; color: var(--cream);
-  background: var(--brand-gradient); background-size: 160% 100%;
-  animation: gradient-pan 14s ease-in-out infinite alternate;
+  background: #36549d;
   padding: clamp(60px, 8vw, 100px) 0;
 }
-@keyframes gradient-pan { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+/* the gradient lives on a wider layer that slides sideways: moved by the GPU, never repainted */
+.join-band::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 160%; z-index: -2; pointer-events: none;
+  background: var(--brand-gradient);
+  animation: gradient-pan 14s ease-in-out infinite alternate; will-change: transform;
+}
+@keyframes gradient-pan { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-37.5%, 0, 0); } }
 .join-row { position: relative; z-index: 1; display: grid; grid-template-columns: 1.3fr 1fr auto; gap: 24px 40px; align-items: center; }
 .join-row h2 { font-size: clamp(1.9rem, 3.8vw, 3rem); color: var(--cream); }
 .join-row p { color: rgba(247, 231, 216, 0.92); }
@@ -496,7 +501,7 @@ button { font: inherit; }
 /* ───────── Footer ───────── */
 .site-footer { position: relative; overflow: hidden; isolation: isolate; background: #101a33; color: #b9c3d6; padding: 80px 0 28px; }
 .footer-glow span {
-  position: absolute; z-index: -1; border-radius: 50%; filter: blur(80px); opacity: 0.45; pointer-events: none;
+  position: absolute; z-index: -1; border-radius: 50%; filter: blur(80px); opacity: 0.45; pointer-events: none; will-change: transform;
   animation: glow-drift 18s ease-in-out infinite alternate;
 }
 .footer-glow span:nth-child(1) { width: 520px; height: 420px; left: -120px; bottom: -160px; background: var(--brand-blue); }
@@ -645,10 +650,15 @@ button.shelf-item { cursor: pointer; }
   position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 50%;
   display: grid; place-items: center; background: var(--brand-green); color: var(--white); font-size: 0.72rem;
 }
-.shelf-item.is-open { border-color: var(--ink); background: var(--white); color: var(--ink); animation: shelf-call 1.8s ease-in-out infinite; }
+.shelf-item.is-open { border-color: var(--ink); background: var(--white); color: var(--ink); }
+/* the "click me next" glow: a ring that fades in and out (opacity only, so no repainting) */
+.shelf-item.is-open::after {
+  content: ""; position: absolute; inset: -2px; border-radius: inherit; pointer-events: none;
+  box-shadow: 0 0 0 5px rgba(155, 230, 148, 0.6); animation: shelf-call 1.8s ease-in-out infinite; will-change: opacity;
+}
 .shelf-item.is-open svg { opacity: 1; }
 button.shelf-item.is-open:hover { transform: translateY(-4px) rotate(-2deg); }
-@keyframes shelf-call { 0%, 100% { box-shadow: 0 0 0 0 rgba(155, 230, 148, 0.6); } 50% { box-shadow: 0 0 0 5px rgba(155, 230, 148, 0.6); } }
+@keyframes shelf-call { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
 .shelf-dye .dye-row { display: flex; justify-content: center; gap: 4px; flex-wrap: wrap; }
 .dye { padding: 2px; border: 0; background: none; border-radius: 10px; cursor: pointer; transition: transform 0.25s var(--ease-out), opacity 0.2s; }
 .dye svg { width: 28px; height: 40px; }
@@ -682,7 +692,7 @@ button.shelf-item.is-open:hover { transform: translateY(-4px) rotate(-2deg); }
   .foam-done { flex-direction: column; gap: 8px; padding: 14px 18px; border-radius: 22px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .shelf-item.is-open { animation: none; }
+  .shelf-item.is-open::after { animation: none; opacity: 1; }
 }
 
 /* ───────── PDF reader ───────── */

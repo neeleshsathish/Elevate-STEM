@@ -27,6 +27,17 @@
         "sameAs": ["https://www.instagram.com/elevatestem/", "https://discord.gg/ymrERFS4Et"]
       }
     </script>
+    <script>
+      // before first paint: turn on entrance animations (unless reduced motion), and hide the
+      // pre-rendered homepage if this link is for another page
+      (function () {
+        var d = document.documentElement;
+        try { if (!matchMedia("(prefers-reduced-motion: reduce)").matches) d.classList.add("has-motion"); } catch (e) {}
+        var r = location.hash.replace(/^#/, "");
+        if (r.charAt(0) === "/" && r !== "/") d.classList.add("pr-skip");
+      })();
+    </script>
+    <style>html.pr-skip #root { visibility: hidden; }</style>
   </head>
   <body>
     <div id="root"></div>

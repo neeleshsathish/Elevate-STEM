@@ -7,16 +7,20 @@ function parse(value) {
   if (!m) return null;
   return { prefix: m[1], n: Number(m[2].replace(/,/g, "")), suffix: m[3], commas: m[2].includes(",") };
 }
-const fmt = (p, n) => `${p.prefix}${p.commas ? n.toLocaleString("en-US") : n}${p.suffix}`;
+// a simple comma formatter: much cheaper than toLocaleString, which runs every animation frame here
+const commas = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const fmt = (p, n) => `${p.prefix}${p.commas ? commas(n) : n}${p.suffix}`;
 
 export default function CountUp({ value, delay = 0, duration = 1.8 }) {
   const ref = useRef(null);
   const p = parse(value);
-  const [shown, setShown] = useState(() => (p && motionAllowed() ? fmt(p, 0) : value));
+  // starts with the real number (same as the pre-rendered page), then counts up from zero
+  const [shown, setShown] = useState(value);
 
   useEffect(() => {
     if (!p || !motionAllowed()) { setShown(value); return; }
     let raf = 0, timer = 0;
+    setShown(fmt(p, 0));
     const run = () => {
       const t0 = performance.now() + delay * 1000;
       const tick = (now) => {

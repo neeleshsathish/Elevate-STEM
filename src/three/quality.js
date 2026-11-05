@@ -32,3 +32,24 @@ export function adaptiveQuality(renderer, onChange, { max = 1.5, min = 0.6 } = {
     reset() { last = 0; },
   };
 }
+
+// True when the device has no real graphics chip (the browser is drawing 3D on the processor).
+// There the 3D would make the whole page lag, so those visitors get the lighter, non-3D version.
+let softwareGL = null;
+export function isSoftwareGL() {
+  if (softwareGL !== null) return softwareGL;
+  // ?force3d in the address turns the 3D on regardless (handy for testing)
+  if (/[?&]force3d\b/.test(window.location.search)) return (softwareGL = false);
+  try {
+    const c = document.createElement("canvas");
+    const gl = c.getContext("webgl2") || c.getContext("webgl");
+    if (!gl) return (softwareGL = true);
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    softwareGL = /swiftshader|llvmpipe|softpipe|software|microsoft basic render/i.test(name);
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch {
+    softwareGL = true;
+  }
+  return softwareGL;
+}

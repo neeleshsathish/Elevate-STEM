@@ -191,17 +191,17 @@ export const COMPETITION = {
 export const IMPACT = [
   // kind sets the frame: photo, call (video call), screen (app window), phone, doc (paper)
   // r = frame width / height
-  { src: "impact/school-visit.webp", kind: "photo", r: 1.32, caption: "Handing out STEM kits to students on a school visit" },
-  { src: "impact/workshop-prof-kev.webp", kind: "photo", r: 1.806, caption: "Neelesh interviewing Prof Kev in a live workshop" },
-  { src: "impact/kit-contents.webp", kind: "photo", r: 0.84, caption: "Inside one kit: a motor, fan, bulb, switch, and wires for building circuits" },
-  { src: "impact/workshop-questions.webp", kind: "screen", app: "Discord", r: 1.1, caption: "Students sending in questions for a workshop speaker" },
-  { src: "impact/kits-box.webp", kind: "photo", r: 0.7, caption: "A box of science kits packed and ready to send" },
-  { src: "impact/white-house-letter.webp", kind: "doc", r: 0.92, caption: "A letter from the White House recognizing Elevate STEM, July 2026" },
-  { src: "impact/workshop-speaker.webp", kind: "call", r: 1.56, caption: "A guest speaker workshop for our community" },
-  { src: "impact/instagram.webp", kind: "phone", r: 0.53, caption: "18.6K followers and 375K+ views on Instagram" },
-  { src: "impact/school-meeting.webp", kind: "photo", r: 0.87, caption: "Meeting with school staff about bringing kits to their students" },
-  { src: "impact/partner-announcement.webp", kind: "screen", app: "Discord", r: 1.45, caption: "Partner servers sharing our admissions talk with a Harvard alum" },
-  { src: "impact/discord-advice.webp", kind: "screen", app: "Discord", r: 1.1, caption: "Students helping each other plan their classes in our Discord" },
+  { src: "impact/school-visit.webp", w: 1191, sw: 794, kind: "photo", r: 1.32, caption: "Handing out STEM kits to students on a school visit" },
+  { src: "impact/workshop-prof-kev.webp", w: 1604, sw: 1084, kind: "photo", r: 1.806, caption: "Neelesh interviewing Prof Kev in a live workshop" },
+  { src: "impact/kit-contents.webp", w: 758, sw: 505, kind: "photo", r: 0.84, caption: "Inside one kit: a motor, fan, bulb, switch, and wires for building circuits" },
+  { src: "impact/workshop-questions.webp", w: 1180, sw: 708, kind: "screen", app: "Discord", r: 1.1, caption: "Students sending in questions for a workshop speaker" },
+  { src: "impact/kits-box.webp", w: 634, sw: 423, kind: "photo", r: 0.7, caption: "A box of science kits packed and ready to send" },
+  { src: "impact/white-house-letter.webp", w: 738, sw: 403, kind: "doc", r: 0.92, caption: "A letter from the White House recognizing Elevate STEM, July 2026" },
+  { src: "impact/workshop-speaker.webp", w: 1582, sw: 949, kind: "call", r: 1.56, caption: "A guest speaker workshop for our community" },
+  { src: "impact/instagram.webp", w: 621, sw: 339, kind: "phone", r: 0.53, caption: "18.6K followers and 375K+ views on Instagram" },
+  { src: "impact/school-meeting.webp", w: 779, sw: 519, kind: "photo", r: 0.87, caption: "Meeting with school staff about bringing kits to their students" },
+  { src: "impact/partner-announcement.webp", w: 1584, sw: 950, kind: "screen", app: "Discord", r: 1.45, caption: "Partner servers sharing our admissions talk with a Harvard alum" },
+  { src: "impact/discord-advice.webp", w: 1181, sw: 709, kind: "screen", app: "Discord", r: 1.1, caption: "Students helping each other plan their classes in our Discord" },
 ];
 
 // Cards that orbit the atom in the homepage 3D scene (same colors as the "What we do" cards).

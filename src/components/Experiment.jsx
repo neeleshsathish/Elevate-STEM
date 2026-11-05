@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import SplitWords from "../motion/SplitWords.jsx";
 import { lockScroll } from "../motion/smoothScroll.js";
 import { createFoam } from "../motion/foam.js";
+import { isSoftwareGL } from "../three/quality.js";
 
 // A hands-on lab: make elephant toothpaste on a 3D bench, one ingredient at a time.
 // When the yeast goes in, foam gushes out of the flask and fills the whole screen.
@@ -109,8 +110,7 @@ export default function Experiment() {
       if (!en.isIntersecting) return;
       io.disconnect();
       // use the 3D bench when the device can show it; otherwise the flat drawing does the same job
-      if (!webglOK()) { setScene3d("flat"); return; }
-      const load = (tries) =>
+      const loadNow = (tries) =>
         import("../three/labScene.js")
           .then(({ createLabScene }) => {
             if (cancelled) return;
@@ -119,10 +119,16 @@ export default function Experiment() {
           })
           .catch(() => {
             if (cancelled) return;
-            if (tries > 0) setTimeout(() => load(tries - 1), 800);
+            if (tries > 0) setTimeout(() => loadNow(tries - 1), 800);
             else setScene3d("flat");
           });
-      load(1);
+      // the 3D check opens a test context, so do it when the browser is idle
+      const idle = (fn) => (window.requestIdleCallback ? window.requestIdleCallback(fn, { timeout: 1200 }) : setTimeout(fn, 100));
+      idle(() => {
+        if (cancelled) return;
+        if (!webglOK() || isSoftwareGL()) { setScene3d("flat"); return; }
+        loadNow(1);
+      });
     }, { rootMargin: "500px 0px" });
     io.observe(canvas);
     return () => { cancelled = true; io.disconnect(); sceneRef.current?.dispose(); foamRef.current?.dispose(); lockScroll(false); };

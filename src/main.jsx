@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, hydrateRoot } from "react-dom/client";
 import { BrowserRouter, HashRouter } from "react-router-dom";
 import App from "./App.jsx";
 import "@fontsource-variable/bricolage-grotesque/opsz.css";
@@ -29,10 +29,21 @@ window.addEventListener("load", () => setTimeout(() => { try { sessionStorage.re
 // Set VITE_BROWSER_ROUTER=1 at build time for plain /team links (only when hosted at a domain root).
 const Router = import.meta.env.VITE_BROWSER_ROUTER ? BrowserRouter : HashRouter;
 
-createRoot(document.getElementById("root")).render(
+const app = (
   <StrictMode>
     <Router>
       <App />
     </Router>
   </StrictMode>
 );
+// The homepage comes pre-rendered in the HTML: attach to it. Any other page builds fresh.
+const root = document.getElementById("root");
+const route = window.location.hash.replace(/^#/, "");
+const atHome = !route.startsWith("/") || route === "/";
+if (root.firstElementChild && atHome) {
+  hydrateRoot(root, app);
+} else {
+  root.textContent = "";
+  createRoot(root).render(app);
+}
+document.documentElement.classList.remove("pr-skip");

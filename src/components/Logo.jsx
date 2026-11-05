@@ -4,7 +4,7 @@ import { asset } from "../data.js";
 export default function Logo({ light = false }) {
   return (
     <span className={`logo${light ? " logo-light" : ""}`}>
-      <img className="logo-img" src={asset("brand/logo-256.webp")} alt="" width="38" height="38" />
+      <img className="logo-img" src={asset("brand/logo-96.webp")} alt="" width="38" height="38" />
       <span className="logo-word">Elevate STEM</span>
     </span>
   );
