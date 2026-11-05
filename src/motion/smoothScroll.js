@@ -11,8 +11,7 @@ export function startSmoothScroll() {
   if (reduce || touch) return null;
 
   lenis = new Lenis({
-    duration: 0.9,
-    easing: (t) => 1 - Math.pow(1 - t, 4),
+    lerp: 0.16,
     smoothWheel: true,
     wheelMultiplier: 1,
   });

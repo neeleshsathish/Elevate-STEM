@@ -1,6 +1,7 @@
 // The homepage 3D scene: a glossy atom floating in a cloudy sky, with a ring of curved cards
 // around it. Each card is a place on the site: drag to spin the ring, click a card to open it.
 import * as THREE from "three";
+import { adaptiveQuality } from "./quality.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 const INK = "#14213d";
@@ -286,6 +287,7 @@ export async function createAtomScene(canvas, { cards, onSelect, onHoverChange, 
   }
   resize();
   const ro = new ResizeObserver(resize);
+  const quality = adaptiveQuality(renderer, () => {}, { max: 1.25 });
   ro.observe(canvas);
 
   // ───────── Interaction ─────────
@@ -346,7 +348,7 @@ export async function createAtomScene(canvas, { cards, onSelect, onHoverChange, 
   // ───────── Loop ─────────
   const clock = new THREE.Clock();
   let raf = 0, running = true, visible = true;
-  const io = new IntersectionObserver(([en]) => { visible = en.isIntersecting; if (visible && running && !raf) loop(); });
+  const io = new IntersectionObserver(([en]) => { visible = en.isIntersecting; if (visible && running && !raf) (quality.reset(), loop()); });
   io.observe(canvas);
 
   function loop() {
@@ -392,10 +394,10 @@ export async function createAtomScene(canvas, { cards, onSelect, onHoverChange, 
       m.scale.setScalar(1 + m.userData.lift * 0.05);
     });
 
-    renderer.render(scene, camera);
+    quality.frame(performance.now()); renderer.render(scene, camera);
     raf = requestAnimationFrame(loop);
   }
-  const onVis = () => { if (!document.hidden && !raf) { clock.getDelta(); loop(); } };
+  const onVis = () => { if (!document.hidden && !raf) { clock.getDelta(); quality.reset(); loop(); } };
   document.addEventListener("visibilitychange", onVis);
   loop();
 

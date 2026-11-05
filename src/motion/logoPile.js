@@ -3,10 +3,11 @@
 // and scatter away from the mouse (or a tap). matter-js does the 2D physics; three.js draws the tiles.
 import Matter from "matter-js";
 import * as THREE from "three";
+import { adaptiveQuality } from "../three/quality.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 const { Engine, Bodies, Body, Composite } = Matter;
-const MAX = 240;
+const MAX = 150;
 
 function roundedRect(size, r) {
   const s = new THREE.Shape();
@@ -82,13 +83,13 @@ export function createLogoPile(canvas, { src, reducedMotion, pileHeight = () => 
     const ph = Math.min(h, pileHeight());
     pileH = ph;
     const count = Math.round(((w * ph) / (avg * avg)) * 0.6);
-    return { min, max, count: Math.min(count, small ? 80 : MAX) };
+    return { min, max, count: Math.min(count, small ? 60 : MAX) };
   }
 
   function build() {
     if (engine) { Composite.clear(engine.world, false); Engine.clear(engine); }
     engine = Engine.create({ gravity: { y: 1.1 }, enableSleeping: true });
-    engine.positionIterations = 8;
+    engine.positionIterations = 6;
     const t = 120;
     Composite.add(engine.world, [
       Bodies.rectangle(w / 2, h + t / 2, w * 3, t, { isStatic: true }),
@@ -137,7 +138,7 @@ export function createLogoPile(canvas, { src, reducedMotion, pileHeight = () => 
     tint.needsUpdate = true;
     tiles.count = faces.count = n;
     tiles.instanceMatrix.needsUpdate = faces.instanceMatrix.needsUpdate = true;
-    renderer.render(scene, camera);
+    quality.frame(performance.now()); renderer.render(scene, camera);
   }
 
   function push() {
@@ -160,11 +161,11 @@ export function createLogoPile(canvas, { src, reducedMotion, pileHeight = () => 
     const dt = Math.min(now - (last || now), 32) || 16.6;
     last = now;
     if (queue > 0 && now >= nextDrop) { drop(w < 640 ? 1 : 2); nextDrop = now + (w < 640 ? 70 : 40); }
-    push();
-    Engine.update(engine, dt);
+    const settled = queue === 0 && !pointer.active && drawnStill;
+    if (!settled) { push(); Engine.update(engine, dt); }
     // once the pile has settled and nobody is touching it, skip drawing (the picture doesn't change)
     const still = queue === 0 && !pointer.active && bodies.every((b) => b.isSleeping);
-    if (!still || !drawnStill) { draw(); drawnStill = still; }
+    if (!still || !drawnStill) { draw(); drawnStill = still; } else quality.reset();
     raf = requestAnimationFrame(loop);
   }
 
@@ -207,6 +208,7 @@ export function createLogoPile(canvas, { src, reducedMotion, pileHeight = () => 
   const ro = new ResizeObserver(resize);
   ro.observe(canvas);
   resize();
+  const quality = adaptiveQuality(renderer, () => { drawnStill = false; }, { max: 1.25 });
 
   const toLocal = (ev) => {
     const r = canvas.getBoundingClientRect();

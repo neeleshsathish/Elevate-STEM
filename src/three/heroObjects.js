@@ -7,6 +7,7 @@
 //   atom     → a small atom (404 page)
 // Each one bobs, follows the mouse a little, spins when dragged, and has little "electrons" orbiting it.
 import * as THREE from "three";
+import { adaptiveQuality } from "./quality.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 const LOGO_URL = `${import.meta.env.BASE_URL}brand/logo-512.png`;
@@ -202,6 +203,7 @@ export async function createHeroObject(canvas, { variant = "atom", covers = [], 
     camera.updateProjectionMatrix();
   }
   resize();
+  const quality = adaptiveQuality(renderer, () => {}, { max: 1.5 });
   const ro = new ResizeObserver(resize);
   ro.observe(canvas);
 
@@ -229,7 +231,7 @@ export async function createHeroObject(canvas, { variant = "atom", covers = [], 
 
   const clock = new THREE.Clock();
   let raf = 0, running = true, visible = true;
-  const io = new IntersectionObserver(([en]) => { visible = en.isIntersecting; if (visible && running && !raf) { clock.getDelta(); loop(); } });
+  const io = new IntersectionObserver(([en]) => { visible = en.isIntersecting; if (visible && running && !raf) { clock.getDelta(); quality.reset(); loop(); } });
   io.observe(canvas);
   const autoSpin = reducedMotion ? 0 : variant === "guides" ? 0 : 0.35;
 
@@ -261,7 +263,7 @@ export async function createHeroObject(canvas, { variant = "atom", covers = [], 
       o.e.position.set(Math.cos(a) * o.R, Math.sin(a) * o.R, 0);
     });
 
-    renderer.render(scene, camera);
+    quality.frame(performance.now()); renderer.render(scene, camera);
     raf = requestAnimationFrame(loop);
   }
   const onVis = () => { if (!document.hidden && !raf) { clock.getDelta(); loop(); } };

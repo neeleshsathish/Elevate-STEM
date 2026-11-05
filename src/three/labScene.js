@@ -3,6 +3,7 @@
 // rising soap bubbles, labeled bottles that swing in and pour a real stream, and a striped column of foam
 // that shoots out of the neck when the yeast goes in.
 import * as THREE from "three";
+import { adaptiveQuality } from "./quality.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 const NECK_Y = 2.24;
@@ -582,6 +583,7 @@ export function createLabScene(canvas, { reducedMotion }) {
     camera.updateProjectionMatrix();
   }
   resize();
+  const quality = adaptiveQuality(renderer, () => { framesLeft = 2; }, { max: 1.5 });
   const ro = new ResizeObserver(resize);
   ro.observe(canvas);
 
@@ -674,10 +676,10 @@ export function createLabScene(canvas, { reducedMotion }) {
       camera.position.distanceToSquared(lastCam) > 1e-6 || framesLeft > 0;
     if (busy) {
       if (pourJob || foamT >= 0) renderer.shadowMap.needsUpdate = true;
-      renderer.render(scene, camera);
+      quality.frame(performance.now()); renderer.render(scene, camera);
       lastCam.copy(camera.position);
       if (framesLeft > 0) framesLeft--;
-    }
+    } else quality.reset();
     raf = requestAnimationFrame(loop);
   }
   buildLiquid(0);
