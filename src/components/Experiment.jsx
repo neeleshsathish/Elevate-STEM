@@ -2,8 +2,12 @@ import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import SplitWords from "../motion/SplitWords.jsx";
 import { lockScroll } from "../motion/smoothScroll.js";
-import { createFoam } from "../motion/foam.js";
 import { isSoftwareGL } from "../three/quality.js";
+
+// The eruption and the little UI animations use anime.js, loaded only when the experiment needs them,
+// so none of it weighs down the first page load.
+const loadFoam = () => import("../motion/foam.js");
+const loadAnime = () => import("animejs");
 
 // A hands-on lab: make elephant toothpaste on a 3D bench, one ingredient at a time.
 // When the yeast goes in, foam gushes out of the flask and fills the whole screen.
@@ -147,6 +151,7 @@ export default function Experiment() {
       s.addDye(dye.hex, next);
       setDyes(next);
     } else {
+      if (id === "yeast") loadFoam();   // get the eruption ready while the yeast pours
       await s.pour(id, null, levels[id]);
       if (id === "soap") s.setSoap(true);
       setDone((d) => ({ ...d, [id]: true }));
@@ -159,9 +164,11 @@ export default function Experiment() {
     const s = sceneRef.current;
     setPhase("react");
     await s.react(dyes);
+    const { createFoam } = await loadFoam();
     setPhase("erupt");
     lockScroll(true);
-    setTimeout(() => sceneRef.current?.pause(), 900);
+    // once the foam covers the bench there's no need to keep drawing the 3D scene
+    setTimeout(() => sceneRef.current?.pause(), 3200);
     foamRef.current = createFoam({
       colors: dyes,
       origin: s.neckPoint(),
@@ -182,6 +189,21 @@ export default function Experiment() {
       setPhase("build");
     });
   }
+
+  // a check badge pops onto each ingredient as it goes in
+  const shelfRef = useRef(null);
+  useEffect(() => {
+    const fresh = shelfRef.current?.querySelectorAll(".shelf-check:not([data-in])");
+    if (!fresh?.length || reduced) return;
+    fresh.forEach((el) => { el.dataset.in = "1"; });
+    loadAnime().then(({ animate }) => animate(fresh, { scale: [0, 1], rotate: [-40, 0], duration: 700, ease: "outElastic(1, .55)" })).catch(() => {});
+  }, [done, reduced]);
+  const doneRef = useRef(null);
+  useEffect(() => {
+    if (phase !== "full" || !doneRef.current || reduced) return;
+    const el = doneRef.current;
+    loadAnime().then(({ animate }) => animate(el, { opacity: [0, 1], y: [36, 0], scale: [0.86, 1], duration: 900, ease: "outElastic(1, .7)" })).catch(() => {});
+  }, [phase, reduced]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape" && (phase === "full" || phase === "erupt")) cleanUp(); };
@@ -231,7 +253,7 @@ export default function Experiment() {
               <p className="lab-status" aria-live="polite">{status}</p>
             </div>
 
-            <div className="lab-shelf">
+            <div className="lab-shelf" ref={shelfRef}>
               {STEPS.map((s) =>
                 s.id === "dye" ? (
                   <div key={s.id} className={`shelf-item shelf-dye ${open("dye") ? "is-open" : ""} ${isDone("dye") ? "is-done" : ""}`}>
@@ -274,7 +296,7 @@ export default function Experiment() {
 
       {(phase === "full" || phase === "draining") &&
         createPortal(
-          <div className={`foam-done ${phase === "draining" ? "is-leaving" : ""}`}>
+          <div className={`foam-done ${phase === "draining" ? "is-leaving" : ""}`} ref={doneRef}>
             <span>That's elephant toothpaste!</span>
             <button type="button" className="btn btn-ink" onClick={cleanUp} autoFocus>Clean it up</button>
           </div>,

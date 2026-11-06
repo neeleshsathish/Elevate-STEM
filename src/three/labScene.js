@@ -5,10 +5,15 @@
 // of the neck when the yeast goes in.
 import * as THREE from "three";
 import { adaptiveQuality } from "./quality.js";
+import { createTimeline, engine } from "animejs";
+
+// ?slowmo=0.2 in the address plays the whole experiment in slow motion (for checking the animation)
+const SLOWMO = typeof location !== "undefined" ? parseFloat((/[?&]slowmo=([\d.]+)/.exec(location.search) || [])[1]) || 1 : 1;
+if (SLOWMO !== 1) engine.speed = SLOWMO;
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 const NECK_Y = 2.24;
-const FOAM_HOLD = 2700; // ms the 3D foam column grows before the screen-filling gush
+
 const BOTTOM_Y = 0.1;
 const FULL_Y = 1.56;
 
@@ -124,30 +129,67 @@ function makeBottle(kind, color) {
     m.position.y = y; m.rotation.y = Math.PI;
     return m;
   };
+  // every bottle says where its stream comes out (mouth) and how its cap opens
+  g.userData.mouth = new THREE.Vector3(0, 0, 0);
   if (kind === "peroxide") {
-    // the brown plastic pharmacy bottle
-    const pts = [[0, -1.18], [0.3, -1.18], [0.33, -1.14], [0.33, -0.36], [0.24, -0.2], [0.11, -0.12], [0.11, 0]].map(([x, y]) => new THREE.Vector2(x, y));
-    g.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 48), plastic("#5a2f15", { roughness: 0.28, clearcoat: 0.9 })));
+    // the brown plastic pharmacy bottle with a white screw cap
+    const pts = [[0, -1.18], [0.3, -1.18], [0.33, -1.14], [0.33, -0.36], [0.24, -0.2], [0.11, -0.12], [0.11, 0], [0.095, 0], [0.095, -0.1]].map(([x, y]) => new THREE.Vector2(x, y));
+    const brown = plastic("#5a2f15", { roughness: 0.28, clearcoat: 0.9, side: THREE.DoubleSide });
+    g.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 48), brown));
     g.add(label(0.336, 0.62, -0.74));
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.16, 32), plastic("#f5f5f2"));
-    cap.position.y = 0.06;
-    g.add(cap);
+    // the threads you see once the cap is off, and the dark opening
+    for (let i = 0; i < 2; i++) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.112, 0.008, 6, 40), brown);
+      ring.rotation.x = Math.PI / 2; ring.position.y = -0.03 - i * 0.035;
+      g.add(ring);
+    }
+    const hole = new THREE.Mesh(new THREE.CircleGeometry(0.095, 32), new THREE.MeshBasicMaterial({ color: "#1a0c05" }));
+    hole.rotation.x = -Math.PI / 2; hole.position.y = -0.02;
+    g.add(hole);
+    const cap = new THREE.Group();
+    const shell = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.16, 40, 1, true), plastic("#f5f5f2", { side: THREE.DoubleSide }));
+    const top = new THREE.Mesh(new THREE.CircleGeometry(0.13, 40), plastic("#f5f5f2"));
+    top.rotation.x = -Math.PI / 2; top.position.y = 0.08;
+    // grip ridges, so you can see it twist
+    const ridges = new THREE.InstancedMesh(new THREE.BoxGeometry(0.012, 0.15, 0.012), plastic("#e4e4de"), 28);
+    const mm = new THREE.Matrix4();
+    for (let i = 0; i < 28; i++) { const a2 = (i / 28) * Math.PI * 2; mm.makeRotationY(-a2).setPosition(Math.cos(a2) * 0.132, 0, Math.sin(a2) * 0.132); ridges.setMatrixAt(i, mm); }
+    cap.add(shell, top, ridges);
+    g.userData.cap = { obj: cap, y: 0.05, lift: 0.17, spin: Math.PI * 3, park: new THREE.Vector3(2.15, 0.08, 0.95) };
   } else if (kind === "soap") {
     const pts = [[0, -1.2], [0.28, -1.2], [0.32, -1.15], [0.32, -0.42], [0.22, -0.2], [0.09, -0.1], [0.09, 0]].map(([x, y]) => new THREE.Vector2(x, y));
     g.add(new THREE.Mesh(new THREE.LatheGeometry(pts, 48), plastic("#f2cf3a", { roughness: 0.12, transparent: true, opacity: 0.92 })));
     g.add(label(0.325, 0.5, -0.72));
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.11, 0.18, 24), plastic("#1f8f4e"));
-    cap.position.y = 0.04;
-    g.add(cap);
+    // dish soap has a flip-top: a green collar with a little nozzle, and a lid on a hinge
+    const green = plastic("#1f8f4e");
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.11, 0.07, 32), green);
+    collar.position.y = 0.0;
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, 0.06, 16), green);
+    nozzle.position.y = 0.06;
+    const lidPivot = new THREE.Group();
+    lidPivot.position.set(0.105, 0.035, 0);
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.105, 0.1, 32), green);
+    lid.position.set(-0.105, 0.05, 0);
+    lidPivot.add(lid);
+    g.add(collar, nozzle, lidPivot);
+    g.userData.lid = lidPivot;
+    g.userData.mouth.set(0, 0.09, 0);
   } else if (kind === "dye") {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.52, 32), plastic("#ffffff", { transparent: true, opacity: 0.55 }));
     body.position.y = -0.4;
     const ink = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.4, 32), plastic(color, { roughness: 0.15 }));
     ink.position.y = -0.44;
     g.add(ink, body, label(0.173, 0.26, -0.4));
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.26, 32), plastic(color));
-    tip.position.y = -0.03;
-    g.add(tip);
+    // a white dropper nozzle under a colored cap that pulls straight off
+    const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.17, 0.05, 32), plastic("#ffffff"));
+    shoulder.position.y = -0.115;
+    const nozzle = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 24), plastic("#ffffff"));
+    nozzle.position.y = -0.08;
+    g.add(shoulder, nozzle);
+    const cap = new THREE.Group();
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.28, 32), plastic(color));
+    cap.add(cone);
+    g.userData.cap = { obj: cap, y: -0.01, lift: 0.26, spin: Math.PI * 0.5, park: new THREE.Vector3(2.0, 0.14, 0.95) };
   } else {
     // a glass beaker of warm yeast water with froth on top
     const outer = [[0, -0.95], [0.38, -0.95], [0.4, -0.92], [0.4, 0], [0.44, 0.03], [0.37, 0.03], [0.37, -0.91], [0, -0.92]].map(([x, y]) => new THREE.Vector2(x, y));
@@ -159,6 +201,7 @@ function makeBottle(kind, color) {
     g.add(water, froth, glass, label(0.405, 0.6, -0.5));
   }
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  g.userData.cap?.obj.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return g;
 }
 
@@ -629,9 +672,9 @@ export function createLabScene(canvas, { reducedMotion }) {
 
   // ───────── The foam column: a thick, lumpy, striped rope of foam that pushes out of the neck,
   // rises, flops over, and piles onto the tray, like real elephant toothpaste ─────────
+  // it goes straight up out of the neck and off the top of the view, where the full-screen foam takes over
   const foamPath = new THREE.CatmullRomCurve3([
-    [0, NECK_Y - 0.25, 0], [0, NECK_Y + 0.3, 0], [0.05, NECK_Y + 0.95, 0.05], [0.45, NECK_Y + 1.35, 0.1],
-    [1.05, NECK_Y + 1.15, 0.15], [1.35, NECK_Y + 0.35, 0.2], [1.45, 0.9, 0.35], [1.3, 0.25, 0.5], [0.7, 0.18, 0.75], [0.1, 0.22, 0.8],
+    [0, NECK_Y - 0.3, 0], [0, NECK_Y + 0.4, 0], [0.03, NECK_Y + 1.3, 0.02], [-0.02, NECK_Y + 2.4, 0.03], [0.04, NECK_Y + 3.6, 0.02],
   ].map(([x, y, z]) => new THREE.Vector3(x, y, z)), false, "catmullrom", 0.4);
   const FSEG = 420, FRAD = 36;
   const foamGeo = new THREE.TubeGeometry(foamPath, FSEG, 0.3, FRAD, false);
@@ -647,7 +690,7 @@ export function createLabScene(canvas, { reducedMotion }) {
       // soft puffy bulges: a few low-frequency waves around and along the rope, nothing sharp
       const ang = (ring / FRAD) * Math.PI * 2;
       const bump = 0.045 * Math.sin(3 * ang + u * 31) + 0.035 * Math.sin(2 * ang - u * 19 + 1.3) + 0.05 * Math.pow(Math.sin(u * 46), 2) - 0.02;
-      const swell = u < 0.08 ? 0.75 : 1 + Math.min(0.35, (u - 0.08) * 0.7);
+      const swell = 0.72 + Math.min(0.5, u * 1.6);
       const r = 0.31 * swell + bump;
       p.copy(center).addScaledVector(n, r);
       pos.setXYZ(i, p.x, p.y, p.z);
@@ -680,8 +723,29 @@ export function createLabScene(canvas, { reducedMotion }) {
   tip.castShadow = true;
   tip.visible = false;
   flaskGroup.add(tip);
-  const tipColor = new THREE.Color();
   let foamT = -1;
+  const erupt = { rise: 0, grow: 0 };
+  const riseMat = foamMat.clone();
+  riseMat.vertexColors = false;
+  const foamRise = new THREE.Mesh(new THREE.BufferGeometry(), riseMat);
+  foamRise.visible = false; foamRise.renderOrder = 2.7;
+  flaskGroup.add(foamRise);
+  let riseBuiltAt = -1;
+  // a foam plug that fills the flask from the liquid surface up to (and into) the neck
+  function buildFoamRise(k, top) {
+    if (Math.abs(k - riseBuiltAt) < 0.004) return;
+    riseBuiltAt = k;
+    const y0 = top - 0.06, y1 = y0 + (NECK_Y - 0.05 - y0) * k;
+    const pts = [new THREE.Vector2(0, y0)];
+    const n = 18;
+    for (let i = 0; i <= n; i++) { const y = y0 + ((y1 - y0) * i) / n; pts.push(new THREE.Vector2(Math.max(0.05, innerR(y) - 0.02), y)); }
+    // a domed, bubbly top
+    const rt = Math.max(0.05, innerR(y1) - 0.02);
+    pts.push(new THREE.Vector2(rt * 0.7, y1 + rt * 0.35), new THREE.Vector2(0, y1 + rt * 0.5));
+    foamRise.geometry.dispose();
+    foamRise.geometry = new THREE.LatheGeometry(pts, 48);
+    foamRise.visible = true;
+  }
   function paintFoam(colors) {
     const cs = colors.map((c) => new THREE.Color(c));
     const white = new THREE.Color("#fbf8f1");
@@ -690,7 +754,7 @@ export function createLabScene(canvas, { reducedMotion }) {
       const u = Math.floor(i / (FRAD + 1)) / FSEG;
       // stripes along the length, cream bands between dye colors, like layered real foam
       // bands of each dye with creamy white between them, softly blended at the edges
-      const f = u * 11, k = Math.floor(f), edge = f - k;
+      const f = u * 7, k = Math.floor(f), edge = f - k;
       const band = (j) => (!cs.length || j % 2 === 1 ? white : cs[Math.floor(j / 2) % cs.length]);
       const blend = edge < 0.2 ? 0.5 - edge * 2.5 : edge > 0.8 ? (edge - 0.8) * 2.5 : 0;
       c.copy(band(k));
@@ -701,7 +765,7 @@ export function createLabScene(canvas, { reducedMotion }) {
     foamColorsAttr.needsUpdate = true;
   }
 
-  let pourJob = null;
+  let pourJob = null, anims = 0;
 
   // ───────── Layout & loop ─────────
   let w = 1, h = 1, framesLeft = 3;
@@ -738,7 +802,8 @@ export function createLabScene(canvas, { reducedMotion }) {
   function loop() {
     raf = 0;
     if (disposed || !visible || paused) return;
-    const dt = Math.min(clock.getDelta(), 0.05);
+    const raw = clock.getDelta();
+    const dt = SLOWMO === 1 ? Math.min(raw, 0.05) : Math.min(raw * SLOWMO, 0.05);
     const t = clock.elapsedTime;
 
     if (Math.abs(levelTo - levelNow) > 0.0005) { levelNow += (levelTo - levelNow) * Math.min(1, dt * 2.6); buildLiquid(levelNow); }
@@ -798,27 +863,26 @@ export function createLabScene(canvas, { reducedMotion }) {
 
     // foam pushes out of the neck and grows along its path
     if (foamT >= 0) {
-      foamT += dt;
-      const grow = 1 - Math.pow(1 - clamp01(foamT / 2.2), 2.2);
-      foam.visible = true;
+      const grow = erupt.grow;
+      if (erupt.rise > 0 && erupt.rise < 1.001) buildFoamRise(erupt.rise, top);
+      foam.visible = tip.visible = grow > 0.002;
       const ringsDrawn = Math.max(1, Math.floor(FSEG * grow));
       foam.geometry.setDrawRange(0, ringsDrawn * FRAD * 6);
       // a round puff caps the end of the rope as it grows
       const ug = Math.min(1, ringsDrawn / FSEG);
       foamPath.getPointAt(ug, tip.position);
-      const sw = ug < 0.08 ? 0.75 : 1 + Math.min(0.35, (ug - 0.08) * 0.7);
+      const sw = 0.72 + Math.min(0.5, ug * 1.6);
       tip.scale.setScalar(0.33 * sw);
       // the cap takes the color of the foam right behind it
       const vi = Math.min(foamColorsAttr.count - 1, ringsDrawn * (FRAD + 1));
       tipMat.color.setRGB(foamColorsAttr.getX(vi), foamColorsAttr.getY(vi), foamColorsAttr.getZ(vi));
-      tip.visible = true;
     }
     if (pourJob) pourJob.step(dt);
 
     camera.position.set(camBase.x + pointer.x * 0.5, camBase.y - pointer.y * 0.25, camBase.z);
     camera.lookAt(look);
     // only draw when something actually changed: a pour, rising liquid, bubbles, foam, or the camera moving
-    const busy = pourJob || foamT >= 0 || mixing || flowing || pluming || soapy || Math.abs(levelTo - levelNow) > 0.0005 || fizz > 1 ||
+    const busy = pourJob || anims > 0 || foamT >= 0 || mixing || flowing || pluming || soapy || Math.abs(levelTo - levelNow) > 0.0005 || fizz > 1 ||
       camera.position.distanceToSquared(lastCam) > 1e-6 || framesLeft > 0;
     if (busy) {
       if (pourJob || foamT >= 0) renderer.shadowMap.needsUpdate = true;
@@ -831,157 +895,203 @@ export function createLabScene(canvas, { reducedMotion }) {
   buildLiquid(0);
   loop();
 
-  // a bottle swings in, tips over the neck, pours a curved stream, and swings back out
-  const STREAM_COLOR = { peroxide: "#eaf6ff", soap: "#f2c230", yeast: "#c79a5c" };
+  // ───────── Choreography (anime.js). Each pour is one timeline that animates a handful of 0→1
+  // values (arrive, cap off, tip, leave...); pose() turns those values into where the bottle, its cap
+  // and its stream are this frame. Easing does the feel: caps snap, bottles settle, packets shake. ─────────
+  const surfaceWorld = () => Math.max(BOTTOM_Y + 0.02, BOTTOM_Y + levelNow * (FULL_Y - BOTTOM_Y)) + lift;
+  function play(build, frame) {
+    return new Promise((resolve) => {
+      anims++;
+      const tl = createTimeline({ defaults: { ease: "inOutSine" }, onComplete: () => { anims--; resolve(); } });
+      build(tl);
+      pourJob = { step: frame };
+    });
+  }
+  const _slotP = new THREE.Vector3(), _slotQ = new THREE.Quaternion(), _sc = new THREE.Vector3();
+  const _tumble = new THREE.Quaternion(), _xAxis = new THREE.Vector3(1, 0, 0), _one = new THREE.Quaternion();
+  const _mouth = new THREE.Vector3();
+  // the cap sits on the bottle (twisting up off its threads as `off` goes 0→1), then hops in an arc
+  // onto the bench (`hop`), tumbling once on the way; the same in reverse puts it back on
+  function poseCap(bottle, st) {
+    const c = bottle.userData.cap;
+    if (!c) return;
+    const slot = bottle.userData.slot;
+    slot.position.set(0, c.y + c.lift * st.off, 0);
+    slot.rotation.set(0, c.spin * st.off, 0);
+    slot.updateMatrixWorld();
+    slot.matrixWorld.decompose(_slotP, _slotQ, _sc);
+    const h = st.hop;
+    c.obj.position.lerpVectors(_slotP, c.park, h);
+    c.obj.position.y += Math.sin(Math.PI * h) * 0.75;
+    c.obj.quaternion.slerpQuaternions(_slotQ, _one, h);
+    _tumble.setFromAxisAngle(_xAxis, Math.PI * 2 * h);
+    c.obj.quaternion.premultiply(_tumble);
+  }
+  function bringIn(kind, color) {
+    const bottle = makeBottle(kind, color);
+    bottle.rotation.y = -0.5;
+    scene.add(bottle);
+    const c = bottle.userData.cap;
+    if (c) {
+      bottle.userData.slot = new THREE.Object3D();
+      bottle.add(bottle.userData.slot);
+      scene.add(c.obj);
+    }
+    return bottle;
+  }
+  function takeAway(bottle) {
+    scene.remove(bottle);
+    const c = bottle.userData.cap;
+    if (c) scene.remove(c.obj);
+    const kill = (o) => { if (o.isMesh) { o.geometry.dispose(); [].concat(o.material).forEach((mm) => { mm.map?.dispose(); mm.dispose(); }); } };
+    bottle.traverse(kill); c?.obj.traverse(kill);
+    pourJob = null;
+  }
+  // bottle position: swings in from the upper right to `at`, and back out
+  function placeBottle(bottle, from, at, st) {
+    bottle.position.lerpVectors(from, at, st.inn - st.out);
+    bottle.position.y += Math.sin(Math.PI * st.inn) * 0.25 * (1 - st.out);   // a little arc on the way in
+  }
+
+  // peroxide and soap: arrive, open, tip, pour one continuous stream, tip back, close, leave
   function pour(kind, color, toLevel) {
     if (kind === "yeast") return dropPacket(toLevel);
     if (kind === "dye") return dripDye(color, toLevel);
-    return new Promise((resolve) => {
-      if (reducedMotion) { levelTo = toLevel; resolve(); return; }
-      const bottle = makeBottle(kind, color);
-      bottle.rotation.y = -0.5;
-      scene.add(bottle);
-      const from = new THREE.Vector3(3.6, 3.4, 0.4), at = new THREE.Vector3(0.5, NECK_Y + lift + 0.42, 0.05);
-      const tilt = 2.05;
-      let time = 0, flow = null;
-      const mouth = new THREE.Vector3();
-      pourJob = {
-        step(dt) {
-          time += dt;
-          const tIn = ease(clamp01(time / 0.55));
-          const tTip = ease(clamp01((time - 0.4) / 0.4));
-          const tBack = ease(clamp01((time - 1.7) / 0.5));
-          bottle.position.lerpVectors(from, at, tIn);
-          if (tBack > 0) bottle.position.lerpVectors(at, from, tBack);
-          bottle.rotation.z = tilt * (tTip - tBack) + 0.25 * tIn;
-          if (!flow && time > 0.72) {
-            flow = kind === "peroxide"
-              ? startFlow({ color: "#dcecff", opacity: 0.42, thick: 0.042, gloss: 1, wobble: 0.04 })
-              : startFlow({ color: STREAM_COLOR.soap, opacity: 0.95, thick: 0.03, gloss: 0.85, wobble: 0.03 });
-          }
-          if (flow) {
-            if (time > 1.72) flow.stop();
-            bottle.updateMatrixWorld();
-            mouth.set(0, 0, 0).applyMatrix4(bottle.matrixWorld);
-            if (!flow.stopped) flow.aim(mouth, surfaceWorld());
-            if (flow.hit) levelTo = toLevel;
-          }
-          if (time > 2.25 && (!flow || flow.done)) {
-            scene.remove(bottle);
-            bottle.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.map?.dispose(); o.material.dispose(); } });
-            pourJob = null;
-            levelTo = toLevel;
-            resolve();
-          }
-        },
-      };
-    });
+    if (reducedMotion) { levelTo = toLevel; return Promise.resolve(); }
+    const bottle = bringIn(kind, color);
+    const lid = bottle.userData.lid;
+    const from = new THREE.Vector3(3.6, 3.4, 0.4), at = new THREE.Vector3(0.5, NECK_Y + lift + 0.42, 0.05);
+    const st = { inn: 0, out: 0, off: 0, hop: 0, tip: 0, sway: 0 };
+    let flow = null;
+    const startFlowNow = () => {
+      flow = kind === "peroxide"
+        ? startFlow({ color: "#dcecff", opacity: 0.42, thick: 0.042, gloss: 1, wobble: 0.04 })
+        : startFlow({ color: STREAM_COLOR.soap, opacity: 0.95, thick: 0.03, gloss: 0.85, wobble: 0.03 });
+    };
+    const isSoap = kind === "soap";
+    const T = isSoap
+      ? { open: 520, tip: 760, flow: 1060, stop: 2050, back: 2000, close: 2420, out: 2420 }
+      : { open: 560, tip: 1400, flow: 1700, stop: 2700, back: 2650, close: 3150, out: 3150 };
+    return play((tl) => {
+      tl.add(st, { inn: 1, duration: 700, ease: "outCubic" }, 0)
+        .add(st, { sway: [0, 1, 0], duration: 900, ease: "inOutSine" }, 0);
+      if (isSoap) {
+        tl.add(st, { off: 1, duration: 300, ease: "outBack(2.2)" }, T.open);                     // flip the lid open
+      } else {
+        tl.add(st, { off: 1, duration: 520, ease: "inOutSine" }, T.open)                          // unscrew
+          .add(st, { hop: 1, duration: 620, ease: "inOutQuad" }, T.open + 480);                   // set it on the bench
+      }
+      tl.add(st, { tip: 1, duration: 420, ease: "inOutQuad" }, T.tip)
+        .call(startFlowNow, T.flow)
+        .call(() => flow?.stop(), T.stop)
+        .add(st, { tip: 0, duration: 480, ease: "inOutQuad" }, T.back);
+      if (isSoap) {
+        tl.add(st, { off: 0, duration: 220, ease: "inQuad" }, T.close);                          // snap it shut
+      } else {
+        tl.add(st, { hop: 0, duration: 560, ease: "inOutQuad" }, T.close)                         // cap flies back on…
+          .add(st, { off: 0, duration: 380, ease: "outSine" }, T.close + 520);                    // …and screws down
+      }
+      tl.add(st, { out: 1, duration: 620, ease: "inCubic" }, T.out + (isSoap ? 120 : 520));
+    }, () => {
+      placeBottle(bottle, from, at, st);
+      bottle.rotation.z = 2.05 * st.tip + 0.25 * st.inn * (1 - st.tip) + 0.08 * st.sway;
+      if (lid) lid.rotation.z = -2.25 * st.off;
+      bottle.updateMatrixWorld();
+      poseCap(bottle, st);
+      if (flow && !flow.stopped) { flow.aim(bottle.localToWorld(_mouth.copy(bottle.userData.mouth)), surfaceWorld()); }
+      if (flow?.hit) levelTo = toLevel;
+    }).then(() => { takeAway(bottle); levelTo = toLevel; });
   }
-  const surfaceWorld = () => Math.max(BOTTOM_Y + 0.02, BOTTOM_Y + levelNow * (FULL_Y - BOTTOM_Y)) + lift;
+  const STREAM_COLOR = { soap: "#f2c230" };
 
-  // the dropper tips over the neck and squeezes out three drops, which fall in and bloom
+  // food coloring: pull the cap off, turn the bottle upside down over the neck and squeeze a thin
+  // stream that curls down through the water
   function dripDye(hex, toLevel) {
-    return new Promise((resolve) => {
-      if (reducedMotion) { levelTo = toLevel; resolve(); return; }
-      const bottle = makeBottle("dye", hex);
-      bottle.rotation.y = -0.5;
-      scene.add(bottle);
-      const from = new THREE.Vector3(3.6, 3.4, 0.4), at = new THREE.Vector3(0.02, NECK_Y + lift + 0.75, 0.02);
-      const mouth = new THREE.Vector3();
-      let time = 0, flow = null, landed = false;
-      pourJob = {
-        step(dt) {
-          time += dt;
-          const tIn = ease(clamp01(time / 0.55));
-          const tTip = ease(clamp01((time - 0.35) / 0.35));
-          const tBack = ease(clamp01((time - 1.55) / 0.5));
-          bottle.position.lerpVectors(from, at, tIn);
-          if (tBack > 0) bottle.position.lerpVectors(at, from, tBack);
-          bottle.rotation.z = Math.PI * (tTip - tBack) + 0.25 * tIn * (1 - tTip);
-          // squeezed the whole time the dye is running
-          const squeeze = time > 0.72 && time < 1.42 ? 1 : 0;
-          bottle.scale.set(1 + 0.1 * squeeze, 1 - 0.07 * squeeze, 1 + 0.1 * squeeze);
-          if (!flow && time > 0.75) flow = startFlow({ color: hex, opacity: 0.96, thick: 0.013, gloss: 0.75, wobble: 0.06 });
-          if (flow) {
-            if (time > 1.4) flow.stop();
-            bottle.updateMatrixWorld();
-            mouth.set(0, 0, 0).applyMatrix4(bottle.matrixWorld);
-            if (!flow.stopped) flow.aim(mouth, surfaceWorld());
-            if (flow.hit && !landed) {
-              landed = true;
-              levelTo = toLevel;
-              const ph = Math.random() * Math.PI * 2;
-              startPlume(hex, { opacity: 0.62, phase: ph, swirl: 1, width: 1 });
-              startPlume(hex, { opacity: 0.45, phase: ph + 2.6, swirl: -0.8, width: 0.7, life: 3 });
-              dyeList.push(hex);
-              const blend = new THREE.Color(dyeList[0]);
-              dyeList.slice(1).forEach((c) => blend.lerp(new THREE.Color(c), 0.45));
-              mixTo("#" + blend.getHexString(), 0.93, 2.6);
-            }
-          }
-          if (time > 2.1 && (!flow || flow.done)) {
-            scene.remove(bottle);
-            bottle.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.map?.dispose(); o.material.dispose(); } });
-            pourJob = null;
-            levelTo = toLevel;
-            resolve();
-          }
-        },
-      };
-    });
+    if (reducedMotion) { levelTo = toLevel; return Promise.resolve(); }
+    const bottle = bringIn("dye", hex);
+    const from = new THREE.Vector3(3.6, 3.4, 0.4), at = new THREE.Vector3(0.02, NECK_Y + lift + 0.78, 0.02);
+    const st = { inn: 0, out: 0, off: 0, hop: 0, tip: 0, squeeze: 0 };
+    let flow = null, landed = false;
+    return play((tl) => {
+      tl.add(st, { inn: 1, duration: 650, ease: "outCubic" }, 0)
+        .add(st, { off: 1, duration: 260, ease: "outBack(1.6)" }, 520)                           // pop!
+        .add(st, { hop: 1, duration: 600, ease: "inOutQuad" }, 700)
+        .add(st, { tip: 1, duration: 420, ease: "inOutBack(1.2)" }, 900)
+        .add(st, { squeeze: 1, duration: 140, ease: "outQuad" }, 1300)
+        .call(() => { flow = startFlow({ color: hex, opacity: 0.96, thick: 0.013, gloss: 0.75, wobble: 0.06 }); }, 1340)
+        .call(() => flow?.stop(), 2000)
+        .add(st, { squeeze: 0, duration: 260, ease: "outElastic(1, .5)" }, 1980)
+        .add(st, { tip: 0, duration: 420, ease: "inOutQuad" }, 2100)
+        .add(st, { hop: 0, duration: 520, ease: "inOutQuad" }, 2450)
+        .add(st, { off: 0, duration: 200, ease: "inQuad" }, 2930)
+        .add(st, { out: 1, duration: 600, ease: "inCubic" }, 3080);
+    }, () => {
+      placeBottle(bottle, from, at, st);
+      bottle.rotation.z = Math.PI * st.tip + 0.25 * st.inn * (1 - st.tip);
+      bottle.scale.set(1 + 0.1 * st.squeeze, 1 - 0.07 * st.squeeze, 1 + 0.1 * st.squeeze);
+      bottle.updateMatrixWorld();
+      poseCap(bottle, st);
+      if (flow && !flow.stopped) flow.aim(bottle.localToWorld(_mouth.copy(bottle.userData.mouth)), surfaceWorld());
+      if (flow?.hit && !landed) {
+        landed = true;
+        levelTo = toLevel;
+        const ph = Math.random() * Math.PI * 2;
+        startPlume(hex, { opacity: 0.62, phase: ph, swirl: 1, width: 1 });
+        startPlume(hex, { opacity: 0.45, phase: ph + 2.6, swirl: -0.8, width: 0.7, life: 3 });
+        dyeList.push(hex);
+        const blend = new THREE.Color(dyeList[0]);
+        dyeList.slice(1).forEach((c) => blend.lerp(new THREE.Color(c), 0.45));
+        mixTo("#" + blend.getHexString(), 0.93, 2.6);
+      }
+    }).then(() => { takeAway(bottle); levelTo = toLevel; });
   }
 
-  // the yeast packet flies in, tears open at the corner, tips over the neck and pours its granules
+  // the yeast packet flies in, tears open at the corner, tips over the neck, and a sandy stream pours out
   function dropPacket(toLevel) {
-    return new Promise((resolve) => {
-      if (reducedMotion) { levelTo = toLevel; resolve(); return; }
-      const { group: packet, flap } = makePacket();
-      packet.rotation.y = -0.35;
-      scene.add(packet);
-      const from = new THREE.Vector3(3.4, 3.8, 0.4), at = new THREE.Vector3(0.04, NECK_Y + lift + 0.42, 0.03);
-      const mouth = new THREE.Vector3();
-      const flapV = new THREE.Vector3(0.9, 1.6, 0.4);
-      let time = 0, flow = null, landed = false;
-      pourJob = {
-        step(dt) {
-          time += dt;
-          const tIn = ease(clamp01(time / 0.6));
-          const tTip = ease(clamp01((time - 0.95) / 0.45));
-          const tBack = ease(clamp01((time - 2.6) / 0.5));
-          packet.position.lerpVectors(from, at, tIn);
-          if (tBack > 0) packet.position.lerpVectors(at, from, tBack);
-          // tear: the corner strip rips off and flutters away
-          if (time > 0.62) {
-            flap.visible = time < 1.6;
-            const ft = time - 0.62;
-            flap.position.set(flapV.x * ft, flapV.y * ft - 2.4 * ft * ft, flapV.z * ft);
-            flap.rotation.set(ft * 5, ft * 3, ft * 7);
-          }
-          const shake = time > 1.4 && time < 2.5 ? Math.sin(time * 38) * 0.06 : 0;
-          packet.rotation.z = -0.15 * tIn * (1 - tTip) + 2.35 * (tTip - tBack) + shake;
-          if (!flow && time > 1.3) flow = startFlow({ color: "#c4934f", opacity: 1, thick: 0.024, gloss: 0, grain: 1, wobble: 0.14 });
-          if (flow) {
-            if (time > 2.55) flow.stop();
-            packet.updateMatrixWorld();
-            mouth.set(0, 0, 0).applyMatrix4(packet.matrixWorld);
-            if (!flow.stopped) flow.aim(mouth, surfaceWorld());
-            if (flow.hit && !landed) {
-              landed = true;
-              levelTo = toLevel;
-              const ph = Math.random() * Math.PI * 2;
-              startPlume("#b98a4e", { opacity: 0.4, phase: ph, swirl: 0.7, width: 1.1, life: 3.6 });
-              startPlume("#d9b98a", { opacity: 0.3, phase: ph + 3, swirl: -0.6, width: 0.8, life: 3.2 });
-            }
-          }
-          if (time > 3.15 && (!flow || flow.done)) {
-            scene.remove(packet);
-            packet.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); [].concat(o.material).forEach((mm) => { mm.map?.dispose(); mm.dispose(); }); } });
-            pourJob = null;
-            levelTo = toLevel;
-            resolve();
-          }
-        },
-      };
+    if (reducedMotion) { levelTo = toLevel; return Promise.resolve(); }
+    const { group: packet, flap } = makePacket();
+    packet.rotation.y = -0.35;
+    scene.add(packet);
+    const from = new THREE.Vector3(3.4, 3.8, 0.4), at = new THREE.Vector3(0.04, NECK_Y + lift + 0.42, 0.03);
+    const mouth = new THREE.Vector3();
+    const flapV = new THREE.Vector3(0.9, 1.6, 0.4);
+    const st = { inn: 0, out: 0, tip: 0, shake: 0, tear: 0 };
+    let flow = null, landed = false;
+    return play((tl) => {
+      tl.add(st, { inn: 1, duration: 700, ease: "outCubic" }, 0)
+        .add(st, { tear: 1, duration: 1000, ease: "linear" }, 650)
+        .add(st, { tip: 1, duration: 450, ease: "inOutBack(1.1)" }, 1000)
+        .add(st, { shake: [0, 1, 1, 0], duration: 1300, ease: "linear" }, 1350)
+        .call(() => { flow = startFlow({ color: "#c4934f", opacity: 1, thick: 0.024, gloss: 0, grain: 1, wobble: 0.14 }); }, 1300)
+        .call(() => flow?.stop(), 2550)
+        .add(st, { tip: 0, duration: 500, ease: "inOutQuad" }, 2600)
+        .add(st, { out: 1, duration: 600, ease: "inCubic" }, 2650);
+    }, () => {
+      packet.position.lerpVectors(from, at, st.inn - st.out);
+      // tear: the corner strip rips off and flutters away
+      flap.visible = st.tear > 0.001 ? st.tear < 0.98 : true;
+      if (st.tear > 0) {
+        const ft = st.tear;
+        flap.position.set(flapV.x * ft, flapV.y * ft - 2.4 * ft * ft, flapV.z * ft);
+        flap.rotation.set(ft * 5, ft * 3, ft * 7);
+      }
+      const shake = Math.sin(performance.now() / 26) * 0.06 * st.shake;
+      packet.rotation.z = -0.15 * st.inn * (1 - st.tip) + 2.35 * st.tip + shake;
+      packet.updateMatrixWorld();
+      mouth.set(0, 0, 0).applyMatrix4(packet.matrixWorld);
+      if (flow && !flow.stopped) flow.aim(mouth, surfaceWorld());
+      if (flow?.hit && !landed) {
+        landed = true;
+        levelTo = toLevel;
+        const ph = Math.random() * Math.PI * 2;
+        startPlume("#b98a4e", { opacity: 0.4, phase: ph, swirl: 0.7, width: 1.1, life: 3.6 });
+        startPlume("#d9b98a", { opacity: 0.3, phase: ph + 3, swirl: -0.6, width: 0.8, life: 3.2 });
+      }
+    }).then(() => {
+      scene.remove(packet);
+      packet.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); [].concat(o.material).forEach((mm) => { mm.map?.dispose(); mm.dispose(); }); } });
+      pourJob = null;
+      levelTo = toLevel;
     });
   }
 
@@ -995,24 +1105,37 @@ export function createLabScene(canvas, { reducedMotion }) {
       mixTo("#" + blend.getHexString(), 0.93, 0.01);
     },
     setSoap(on) { soapy = on; cloudTo = on ? 0.16 : 0.04; if (on) mixTo("#f1f6e2", 0.55, reducedMotion ? 0.01 : 1.4); },
+    // the reaction: fizzing, foam swells up through the flask, then a striped rope of foam shoots out of
+    // the neck; the promise resolves as it leaves the top of the view, for the full-screen foam to carry on
     react(colors) {
+      paintFoam(colors);
+      const first = new THREE.Color(colors[0] || "#fbf8f1").lerp(new THREE.Color("#fbf8f1"), 0.25);
+      riseMat.color.copy(first);
+      fizz = 3.4;
+      foamT = 0;
+      if (reducedMotion) { erupt.rise = 1; erupt.grow = 1; return Promise.resolve(); }
+      erupt.rise = 0; erupt.grow = 0;
       return new Promise((resolve) => {
-        fizz = 3.4;
-        paintFoam(colors);
-        foamT = 0;
-        setTimeout(resolve, reducedMotion ? 0 : FOAM_HOLD);
+        anims++;
+        createTimeline({ onComplete: () => { anims--; } })
+          .add(erupt, { rise: 1, duration: 1150, ease: "inQuad" }, 0)
+          .add(erupt, { grow: 1, duration: 900, ease: "outCubic" }, 1000)
+          .call(resolve, 1550);
       });
     },
     neckPoint() {
+      // where the neck is on screen, and how wide the foam rope is there (so the full-screen foam lines up)
       const p = new THREE.Vector3(0, NECK_Y + lift + 0.1, 0).project(camera);
+      const e = new THREE.Vector3(0.33, NECK_Y + lift + 0.1, 0).project(camera);
       const r = canvas.getBoundingClientRect();
-      return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (-p.y * 0.5 + 0.5) * r.height };
+      return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (-p.y * 0.5 + 0.5) * r.height, r: Math.abs(e.x - p.x) * 0.5 * r.width };
     },
     pause() { paused = true; cancelAnimationFrame(raf); raf = 0; },
     resume() { paused = false; clock.getDelta(); if (!raf) loop(); },
     reset() {
       framesLeft = 3; renderer.shadowMap.needsUpdate = true;
       levelTo = 0; soapy = false; fizz = 1; foamT = -1; foam.visible = false; tip.visible = false;
+      foamRise.visible = false; erupt.rise = erupt.grow = 0; riseBuiltAt = -1;
       cloudTo = 0.04; mixQueue.length = 0; mixJob = null;
       mixU.uOld.value.set("#e6f3ff"); mixU.uNew.value.set("#e6f3ff"); mixU.uOldA.value = mixU.uNewA.value = 0.42; mixU.uFront.value = -10;
       dyeList.length = 0;
