@@ -1,7 +1,8 @@
 // The 3D lab for the elephant toothpaste experiment: a tiled lab wall, a black epoxy bench with a tray,
 // a thin glass Erlenmeyer flask with printed graduations, see-through liquid that takes on the dye color,
-// rising soap bubbles, labeled bottles that swing in and pour a real stream, and a striped column of foam
-// that shoots out of the neck when the yeast goes in.
+// rising soap bubbles, bottles that swing in and pour one continuous stream each (liquid, a thin line of dye,
+// a sandy ribbon of yeast) with dye curling through the water, and a striped column of foam that shoots out
+// of the neck when the yeast goes in.
 import * as THREE from "three";
 import { adaptiveQuality } from "./quality.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
@@ -19,6 +20,7 @@ function innerR(y) {
 }
 const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 const clamp01 = (t) => Math.max(0, Math.min(1, t));
+const smoothstep = (a, b, x) => { const k = clamp01((x - a) / (b - a)); return k * k * (3 - 2 * k); };
 
 function canvasTex(w, h, draw, opts = {}) {
   const c = document.createElement("canvas");
@@ -212,6 +214,98 @@ function makePacket() {
   return { group, flap };
 }
 
+// A tube whose thickness can change along its length. It is rebuilt in place every frame
+// (same buffers, no new geometry), which keeps pouring streams smooth and cheap.
+function makeFlowTube(seg = 72, rad = 12) {
+  const geo = new THREE.BufferGeometry();
+  const nV = (seg + 1) * (rad + 1);
+  const pos = new THREE.BufferAttribute(new Float32Array(nV * 3), 3).setUsage(THREE.DynamicDrawUsage);
+  const nor = new THREE.BufferAttribute(new Float32Array(nV * 3), 3).setUsage(THREE.DynamicDrawUsage);
+  const uvs = new THREE.BufferAttribute(new Float32Array(nV * 2), 2).setUsage(THREE.DynamicDrawUsage);
+  const idx = [];
+  for (let i = 0; i < seg; i++) for (let j = 0; j < rad; j++) {
+    const a = i * (rad + 1) + j, b = a + rad + 1;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  geo.setIndex(idx);
+  geo.setAttribute("position", pos); geo.setAttribute("normal", nor); geo.setAttribute("uv", uvs);
+  const P = new THREE.Vector3(), Pa = new THREE.Vector3(), Pb = new THREE.Vector3();
+  const T = new THREE.Vector3(), N = new THREE.Vector3(), Bn = new THREE.Vector3(), D = new THREE.Vector3();
+  // pointAt(u, out) gives the centre line; radiusAt(u) the thickness; u runs 0..1 along the whole path
+  function update(pointAt, u0, u1, radiusAt, uvLen = 1) {
+    let k = 0, kk = 0;
+    for (let i = 0; i <= seg; i++) {
+      const u = Math.min(1, Math.max(0, u0 + ((u1 - u0) * i) / seg));   // rounding can land a hair past 1
+      pointAt(u, P);
+      pointAt(Math.min(1, u + 0.004), Pb); pointAt(Math.max(0, u - 0.004), Pa);
+      T.subVectors(Pb, Pa).normalize();
+      if (i === 0) { N.set(0, 1, 0); if (Math.abs(T.y) > 0.9) N.set(1, 0, 0); N.crossVectors(T, N).normalize(); }
+      else N.addScaledVector(T, -T.dot(N)).normalize();   // carry the frame along so the tube never twists
+      Bn.crossVectors(T, N);
+      const r = Math.max(0.0005, radiusAt(u));
+      for (let j = 0; j <= rad; j++) {
+        const a = (j / rad) * Math.PI * 2;
+        D.copy(N).multiplyScalar(Math.cos(a)).addScaledVector(Bn, Math.sin(a));
+        pos.array[k] = P.x + D.x * r; nor.array[k++] = D.x;
+        pos.array[k] = P.y + D.y * r; nor.array[k++] = D.y;
+        pos.array[k] = P.z + D.z * r; nor.array[k++] = D.z;
+        uvs.array[kk++] = u * uvLen; uvs.array[kk++] = j / rad;
+      }
+    }
+    pos.needsUpdate = nor.needsUpdate = uvs.needsUpdate = true;
+  }
+  return { geo, update };
+}
+
+// Shading for poured liquid, a falling ribbon of yeast, and dye curling through the water.
+// Glossy liquid gets a bright rim and a highlight; little ripples slide down the stream so it reads as flowing.
+function flowMaterial({ color, opacity = 1, gloss = 1, grain = 0, plume = 0 }) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(color) }, uOpacity: { value: opacity }, uTime: { value: 0 },
+      uGloss: { value: gloss }, uGrain: { value: grain }, uPlume: { value: plume },
+    },
+    vertexShader: `varying vec3 vN; varying vec3 vW; varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: `uniform vec3 uColor; uniform float uOpacity; uniform float uTime; uniform float uGloss; uniform float uGrain; uniform float uPlume;
+      varying vec3 vN; varying vec3 vW; varying vec2 vUv;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      void main() {
+        vec3 n = normalize(vN); vec3 v = normalize(cameraPosition - vW);
+        float ndv = abs(dot(n, v));
+        float fres = pow(1.0 - ndv, 3.0);
+        vec3 L = normalize(vec3(-3.5, 6.0, 4.0));
+        float spec = pow(max(dot(reflect(-L, n), v), 0.0), 48.0);
+        float flow = 0.5 + 0.5 * sin(vUv.x * 34.0 - uTime * 15.0 + sin(vUv.y * 18.85) * 0.9);
+        vec3 col = uColor * (0.72 + 0.28 * ndv) * (0.93 + 0.12 * flow);
+        vec3 env = mix(vec3(0.52, 0.58, 0.72), vec3(1.0), smoothstep(-0.3, 0.9, reflect(-v, n).y));
+        col = mix(col, env, fres * 0.65 * uGloss) + spec * uGloss * (0.8 + 0.3 * flow);
+        float a = uOpacity * mix(1.0, 0.7 + 0.6 * fres, uGloss);
+        if (uGrain > 0.5) {
+          // a sandy ribbon: speckled color, ragged edges, grains racing down
+          float g = hash(floor(vec2(vUv.x * 110.0 - uTime * 70.0, vUv.y * 18.0)));
+          col *= 0.68 + 0.6 * g;
+          a *= smoothstep(0.08, 0.5, ndv + g * 0.4);
+        }
+        if (uPlume > 0.5) {
+          // dye curling through water: dense in the middle, soft wispy edges
+          float w = 0.5 + 0.5 * sin(vUv.x * 9.0 - uTime * 2.4 + vUv.y * 6.2832);
+          col = uColor * (0.85 + 0.25 * w);
+          a = uOpacity * pow(ndv, 1.5) * (0.7 + 0.3 * w);
+        }
+        gl_FragColor = vec4(col, a);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false,
+  });
+}
+
 export function createLabScene(canvas, { reducedMotion }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -272,17 +366,37 @@ export function createLabScene(canvas, { reducedMotion }) {
   const flaskGroup = new THREE.Group();
   flaskGroup.position.y = lift;
   scene.add(flaskGroup);
+  // (the flat bottom faces are left out of the lathe: seen at a low angle the glass rim-glow turned them
+  // into a solid white disc. The base gets its own, clearer pieces below.)
   const wallPts = [
-    [0, 0], [0.96, 0], [1.05, 0.05], [1.08, 0.16], [0.3, 1.46], [0.27, 1.56], [0.27, 2.14], [0.335, 2.17], [0.335, 2.24],
-    [0.235, 2.24], [0.235, 1.56], [0.98, 0.22], [0.9, BOTTOM_Y], [0, BOTTOM_Y],
+    [0.96, 0], [1.05, 0.05], [1.08, 0.16], [0.3, 1.46], [0.27, 1.56], [0.27, 2.14], [0.335, 2.17], [0.335, 2.24],
+    [0.235, 2.24], [0.235, 1.56], [0.98, 0.22], [0.9, BOTTOM_Y],
   ].map(([x, y]) => new THREE.Vector2(x, y));
   const flaskGeo = new THREE.LatheGeometry(wallPts, 96);
   const glassBack = new THREE.Mesh(flaskGeo, glassMaterial(0.08, THREE.BackSide));
   const glassFront = new THREE.Mesh(flaskGeo, glassMaterial(0.1, THREE.FrontSide));
   glassBack.renderOrder = 1; glassFront.renderOrder = 3;
-  // the thick glass base catches light like a real flask
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.97, 1.0, BOTTOM_Y, 64), glassMaterial(0.35));
-  base.position.y = BOTTOM_Y / 2; base.renderOrder = 2;
+  // the thick glass base: a clear disc you can see the tray through, with the darker, slightly green
+  // edge that thick glass has and a thin bright rim where the light catches it
+  const base = new THREE.Group();
+  const baseSide = new THREE.Mesh(new THREE.CylinderGeometry(0.97, 1.0, BOTTOM_Y, 64, 1, true), glassMaterial(0.16));
+  baseSide.position.y = BOTTOM_Y / 2;
+  const baseDisc = new THREE.Mesh(
+    new THREE.CircleGeometry(0.965, 64),
+    new THREE.MeshBasicMaterial({
+      map: canvasTex(256, 256, (ctx, w2) => {
+        const c2 = w2 / 2;
+        const g = ctx.createRadialGradient(c2, c2, 0, c2, c2, c2);
+        g.addColorStop(0, "rgba(210,232,228,0.05)"); g.addColorStop(0.72, "rgba(190,216,212,0.1)");
+        g.addColorStop(0.9, "rgba(120,150,150,0.28)"); g.addColorStop(0.965, "rgba(255,255,255,0.55)"); g.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = g; ctx.fillRect(0, 0, w2, w2);
+      }),
+      transparent: true, depthWrite: false, toneMapped: false,
+    })
+  );
+  baseDisc.rotation.x = -Math.PI / 2; baseDisc.position.y = BOTTOM_Y - 0.002;
+  base.add(baseSide, baseDisc);
+  base.traverse((o) => { o.renderOrder = 2; });
   // printed graduations on the front of the cone
   const gradGeo = new THREE.LatheGeometry(
     [[1.0, 0.24], [0.3, 1.48]].map(([x, y]) => new THREE.Vector2(x + 0.012, y)), 48, -Math.PI * 0.32, Math.PI * 0.64
@@ -291,16 +405,35 @@ export function createLabScene(canvas, { reducedMotion }) {
   grads.rotation.y = Math.PI * 0.12; grads.renderOrder = 4;
   flaskGroup.add(glassBack, base, glassFront, grads);
 
-  // contact shadow so the glass sits on the tray
-  const cs = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 2.7), new THREE.MeshBasicMaterial({
-    map: canvasTex(128, 128, (ctx) => {
-      const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-      g.addColorStop(0, "rgba(10,14,24,0.45)"); g.addColorStop(0.5, "rgba(10,14,24,0.14)"); g.addColorStop(1, "rgba(10,14,24,0)");
-      ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+  // Shadow under the flask. The tray's top is at y = 0.1, so these sit just above it (they were
+  // exactly on it before and got hidden). The light comes from the upper left, so the soft shadow
+  // falls back and to the right, with a tight dark line where the glass touches the tray.
+  const CS = 3.4, csPx = 256, toPx = (u) => (u / CS + 0.5) * csPx;
+  const shadowDx = 0.2, shadowDz = -0.22;   // world units, away from the light
+  const cs = new THREE.Mesh(new THREE.PlaneGeometry(CS, CS), new THREE.MeshBasicMaterial({
+    map: canvasTex(csPx, csPx, (ctx) => {
+      const cx = toPx(shadowDx), cy = toPx(-shadowDz);   // canvas y runs toward the viewer (+z)
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, toPx(1.45) - csPx / 2);
+      g.addColorStop(0, "rgba(8,12,26,0.4)"); g.addColorStop(0.55, "rgba(8,12,26,0.25)"); g.addColorStop(1, "rgba(8,12,26,0)");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, csPx, csPx);
+      // contact line right at the rim of the base
+      const c0 = csPx / 2, rim = toPx(1.0) - c0;
+      const g2 = ctx.createRadialGradient(c0, c0, rim * 0.86, c0, c0, rim * 1.07);
+      g2.addColorStop(0, "rgba(8,12,26,0)"); g2.addColorStop(0.62, "rgba(8,12,26,0.42)"); g2.addColorStop(1, "rgba(8,12,26,0)");
+      ctx.fillStyle = g2; ctx.fillRect(0, 0, csPx, csPx);
     }), transparent: true, depthWrite: false,
   }));
-  cs.rotation.x = -Math.PI / 2; cs.position.y = 0.1;
-  scene.add(cs);
+  cs.rotation.x = -Math.PI / 2; cs.position.y = 0.104; cs.renderOrder = 1;
+  // light focused through the glass and liquid: a soft bright patch inside the shadow, tinted by the liquid
+  const caustic = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.1), new THREE.MeshBasicMaterial({
+    map: canvasTex(128, 128, (ctx) => {
+      const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      g.addColorStop(0, "rgba(255,255,255,0.9)"); g.addColorStop(0.4, "rgba(255,255,255,0.35)"); g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+    }), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.16, color: "#fff7e8",
+  }));
+  caustic.rotation.x = -Math.PI / 2; caustic.position.set(0.42, 0.106, -0.36); caustic.renderOrder = 1;
+  scene.add(cs, caustic);
 
   // ───────── Liquid: see-through, tinted by distance like real colored water ─────────
   const liquidMat = new THREE.MeshPhysicalMaterial({
@@ -370,109 +503,113 @@ export function createLabScene(canvas, { reducedMotion }) {
     return true;
   }
 
-  // ───────── Dye: drops fall from the dropper, then each one blooms into soft clouds that sink and curl ─────────
-  const drops = [];   // falling drops (world space)
-  const puffs = [];   // dye clouds inside the liquid (flask space)
-  const dropGeo = new THREE.SphereGeometry(0.045, 16, 12);
-  // a soft round blot, transparent at the edges, used for every ink cloud
-  const inkTex = canvasTex(128, 128, (ctx) => {
-    const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.35, "rgba(255,255,255,0.7)"); g.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
-  });
-  function spawnDrop(hex, pos) {
-    const mesh = new THREE.Mesh(dropGeo, plastic(hex, { roughness: 0.1, clearcoat: 1 }));
-    mesh.position.copy(pos);
-    mesh.scale.set(0.85, 1.25, 0.85);
+  // ───────── Streams: every pour is one continuous stream. It runs out of the mouth, its front falls
+  // into the flask, and when the pour stops the tail lets go of the bottle and drops in after it. ─────────
+  const flows = [];
+  const _fp = new THREE.Vector3();
+  function startFlow({ color, opacity = 0.92, thick = 0.03, gloss = 1, grain = 0, wobble = 0.05 }) {
+    const tube = makeFlowTube(72, 12);
+    const mat = flowMaterial({ color, opacity, gloss, grain });
+    const mesh = new THREE.Mesh(tube.geo, mat);
+    mesh.frustumCulled = false; mesh.renderOrder = 5; mesh.visible = false;
     scene.add(mesh);
-    drops.push({ mesh, vy: -0.4, hex });
+    const pts = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const f = {
+      head: 0, tail: 0, hv: 1.4, tv: 0, age: 0, stopped: false, hit: false, done: false, len: 1,
+      // mouth of the bottle → over the neck → down to the liquid surface (world space)
+      aim(mouth, surfaceY) {
+        const neck = pts[2].set(0, NECK_Y + lift + 0.05, 0);
+        pts[0].copy(mouth);
+        pts[1].set((mouth.x + neck.x) * 0.5, Math.max(mouth.y, neck.y) + 0.06, (mouth.z + neck.z) * 0.5);
+        if (Math.hypot(mouth.x, mouth.z) < 0.15) pts[1].lerpVectors(mouth, neck, 0.5);   // straight above: just fall
+        pts[3].set(0, surfaceY, 0);
+        curve.needsUpdate = true;
+        f.len = curve.getLength();
+      },
+      stop() { f.stopped = true; },
+      step(dt, t) {
+        f.age += dt;
+        // the front accelerates as it falls; so does the tail once the pour ends
+        if (f.head < 1) { f.hv += 9.8 * dt; f.head = Math.min(1, f.head + (f.hv * dt) / f.len); }
+        else f.hit = true;
+        if (f.stopped) { f.tv += 9.8 * dt; f.tail = Math.min(1, f.tail + ((0.6 + f.tv) * dt) / f.len); }
+        if (f.tail >= 0.999) { f.done = true; mesh.visible = false; return; }
+        const span = f.head - f.tail;
+        mesh.visible = span > 0.003;
+        if (!mesh.visible) return;
+        const ramp = Math.min(1, f.age / 0.12);
+        const cap = Math.min(0.05, span * 0.5);
+        tube.update((u, out) => curve.getPointAt(u, out), f.tail, f.head, (u) => {
+          // thins as it speeds up falling, with small ripples running down it
+          let r = (thick * ramp) / Math.sqrt(1 + 2.6 * u);
+          r *= 1 + wobble * Math.sin(u * f.len * 22 - t * 19);
+          // rounded front and back ends
+          const e = Math.min((f.head - u) / cap, (u - f.tail) / cap + (f.tail === 0 ? 1 : 0), 1);
+          return r * Math.sqrt(Math.max(0, e));
+        }, f.len);
+        mat.uniforms.uTime.value = t;
+      },
+      dispose() { scene.remove(mesh); tube.geo.dispose(); mat.dispose(); },
+    };
+    flows.push(f);
+    return f;
   }
-  function bloom(hex, x, y, z) {
-    for (let k = 0; k < 12; k++) {
-      const mat = new THREE.SpriteMaterial({ map: inkTex, color: hex, transparent: true, opacity: 0, depthWrite: false });
-      const mesh = new THREE.Sprite(mat);
-      mesh.renderOrder = 2.5;
-      flaskGroup.add(mesh);
-      puffs.push({
-        mesh, mat, t: -k * 0.05, x, y, z,
-        a: Math.random() * Math.PI * 2, spin: (Math.random() < 0.5 ? -1 : 1) * (1.2 + Math.random()),
-        out: 0.1 + Math.random() * 0.35, sink: 0.3 + Math.random() * 0.5, r0: 0.06 + Math.random() * 0.03, r1: 0.3 + Math.random() * 0.25,
-        life: 2.2 + Math.random() * 0.8,
-      });
+  function stepFlows(dt, t) {
+    for (let i = flows.length - 1; i >= 0; i--) {
+      flows[i].step(dt, t);
+      if (flows[i].done) { flows[i].dispose(); flows.splice(i, 1); }
     }
-  }
-  function stepDye(dt) {
-    const surface = BOTTOM_Y + levelNow * (FULL_Y - BOTTOM_Y);
-    for (let i = drops.length - 1; i >= 0; i--) {
-      const d = drops[i];
-      d.vy -= 9.8 * dt;
-      d.mesh.position.y += d.vy * dt;
-      if (d.mesh.position.y - lift <= surface) {
-        // splash: the drop becomes a cloud at the surface
-        bloom(d.hex, d.mesh.position.x, surface - 0.03, d.mesh.position.z);
-        scene.remove(d.mesh); d.mesh.material.dispose();
-        drops.splice(i, 1);
-      }
-    }
-    for (let i = puffs.length - 1; i >= 0; i--) {
-      const p = puffs[i];
-      p.t += dt;
-      if (p.t < 0) { p.mesh.visible = false; continue; }
-      p.mesh.visible = true;
-      const k = clamp01(p.t / p.life);
-      const e = 1 - Math.pow(1 - k, 2);
-      const y = Math.max(BOTTOM_Y + 0.08, p.y - p.sink * e * (surface - BOTTOM_Y));
-      const ang = p.a + p.spin * e;
-      let rad = p.out * e;
-      const r = p.r0 + (p.r1 - p.r0) * e;
-      rad = Math.min(rad, Math.max(0, innerR(y) - r - 0.03));
-      p.mesh.position.set(p.x + Math.cos(ang) * rad, y, p.z + Math.sin(ang) * rad);
-      // wisps stretch downward as they sink, then thin out into the liquid
-      p.mesh.scale.set(r * 1.1, r * (1.3 + e * 0.8), 1);
-      p.mat.opacity = 0.55 * Math.min(1, p.t * 6) * (1 - k * k);
-      if (k >= 1) { flaskGroup.remove(p.mesh); p.mat.dispose(); puffs.splice(i, 1); }
-    }
-    return drops.length > 0 || puffs.length > 0;
+    return flows.length > 0;
   }
 
-  // ───────── Yeast: granules that pour from the packet, sink and dissolve ─────────
-  const G = 180;
-  const grains = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshStandardMaterial({ color: "#c4934f", roughness: 0.85 }), G);
-  grains.count = 0;
-  grains.frustumCulled = false;
-  scene.add(grains);
-  const grain = [];
-  function spawnGrains(origin, n) {
-    for (let i = 0; i < n && grain.length < G; i++) {
-      grain.push({ x: origin.x + (Math.random() - 0.5) * 0.05, y: origin.y, z: origin.z + (Math.random() - 0.5) * 0.05,
-        vx: (Math.random() - 0.5) * 0.12, vy: -0.2 - Math.random() * 0.4, r: 0.012 + Math.random() * 0.012, sunk: -1 });
-    }
+  // ripples where a stream meets the liquid
+  const rippleTex = canvasTex(128, 128, (ctx) => {
+    const g = ctx.createRadialGradient(64, 64, 40, 64, 64, 64);
+    g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(0.55, "rgba(255,255,255,0.9)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+  });
+  const ripples = [0, 0.5].map((phase) => {
+    const r = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: rippleTex, transparent: true, depthWrite: false, opacity: 0 }));
+    r.rotation.x = -Math.PI / 2; r.renderOrder = 2.6; r.visible = false; r.userData.phase = phase;
+    flaskGroup.add(r);
+    return r;
+  });
+
+  // ───────── Dye and yeast spreading through the water: soft curling plumes that sink from where the
+  // stream lands, widen, and fade as the color mixes in ─────────
+  const plumes = [];
+  function startPlume(color, { opacity = 0.6, phase = 0, swirl = 1, width = 1, life = 3.4 } = {}) {
+    const tube = makeFlowTube(48, 10);
+    const mat = flowMaterial({ color, opacity, plume: 1 });
+    const mesh = new THREE.Mesh(tube.geo, mat);
+    mesh.frustumCulled = false; mesh.renderOrder = 2.5;
+    flaskGroup.add(mesh);
+    plumes.push({ tube, mat, mesh, age: 0, phase, swirl, width, life, opacity });
   }
-  function stepGrains(dt) {
-    const surface = BOTTOM_Y + levelNow * (FULL_Y - BOTTOM_Y) + lift;
-    let n = 0;
-    for (let i = grain.length - 1; i >= 0; i--) {
-      const gr = grain[i];
-      if (gr.sunk < 0) {
-        gr.vy -= 9.8 * dt;
-        gr.x += gr.vx * dt; gr.y += gr.vy * dt;
-        // the neck funnels them in
-        const rr = Math.hypot(gr.x, gr.z), lim = gr.y > NECK_Y * 0.6 + lift ? 0.2 : 2;
-        if (rr > lim && gr.y < NECK_Y + lift + 0.05) { gr.x *= lim / rr; gr.z *= lim / rr; gr.vx *= -0.3; }
-        if (gr.y <= surface) { gr.sunk = 0; gr.vy = -0.12 - Math.random() * 0.1; gr.vx = (Math.random() - 0.5) * 0.2; }
-      } else {
-        gr.sunk += dt;
-        gr.x += gr.vx * dt; gr.y += gr.vy * dt;
-        if (gr.sunk > 1.2) { grain.splice(i, 1); continue; }
-      }
-      const sc = gr.sunk < 0 ? gr.r : gr.r * (1 - gr.sunk / 1.2);
-      v.set(gr.x, gr.y, gr.z); s.setScalar(sc);
-      m.compose(v, q.identity(), s);
-      grains.setMatrixAt(n++, m);
+  function stepPlumes(dt, t) {
+    const surf = BOTTOM_Y + levelNow * (FULL_Y - BOTTOM_Y);
+    for (let i = plumes.length - 1; i >= 0; i--) {
+      const p = plumes[i];
+      p.age += dt;
+      const head = ease(clamp01(p.age / 1.9));
+      const spread = 1 - Math.pow(1 - clamp01(p.age / 2.6), 2);
+      const depth = surf - BOTTOM_Y - 0.1;
+      const at = (u, out) => {
+        const y = surf - 0.03 - u * depth;
+        const ang = p.phase + p.swirl * (u * 4.2 + spread * 1.2);
+        const rad = Math.min(0.04 + u * 0.34 * p.width, Math.max(0.02, innerR(y) - 0.2));
+        return out.set(Math.cos(ang) * rad, y, Math.sin(ang) * rad);
+      };
+      p.tube.update(at, 0, Math.max(0.02, head), (u) => {
+        const end = Math.min(1, (head - u) / 0.12);
+        return (0.035 + 0.21 * u * p.width) * (0.45 + 0.55 * spread) * Math.sqrt(Math.max(0, end)) + 0.004;
+      }, 1);
+      p.mat.uniforms.uTime.value = t;
+      p.mat.uniforms.uOpacity.value = p.opacity * Math.min(1, p.age * 5) * (1 - smoothstep(p.life * 0.5, p.life, p.age));
+      if (p.age >= p.life) { flaskGroup.remove(p.mesh); p.tube.geo.dispose(); p.mat.dispose(); plumes.splice(i, 1); }
     }
-    grains.count = n;
-    grains.instanceMatrix.needsUpdate = true;
-    return grain.length > 0;
+    return plumes.length > 0;
   }
 
   // ───────── Bubbles and soap suds ─────────
@@ -564,11 +701,6 @@ export function createLabScene(canvas, { reducedMotion }) {
     foamColorsAttr.needsUpdate = true;
   }
 
-  // ───────── Pouring stream ─────────
-  const streamMat = new THREE.MeshPhysicalMaterial({ color: "#ffffff", roughness: 0.05, clearcoat: 1, transparent: true, opacity: 0.85 });
-  const stream = new THREE.Mesh(new THREE.BufferGeometry(), streamMat);
-  stream.visible = false;
-  scene.add(stream);
   let pourJob = null;
 
   // ───────── Layout & loop ─────────
@@ -614,10 +746,24 @@ export function createLabScene(canvas, { reducedMotion }) {
     liquidMat.roughness = cloudNow;
     liquidMat.emissive.copy(mixU.uNew.value).multiplyScalar(0.1);
     const mixing = stepMix(dt);
-    const dyeing = stepDye(dt);
-    const graining = stepGrains(dt);
+    const flowing = stepFlows(dt, t);
+    const pluming = stepPlumes(dt, t);
 
     const top = BOTTOM_Y + levelNow * (FULL_Y - BOTTOM_Y);
+
+    // rings spread out where a stream is hitting the surface
+    const splashing = flows.some((f) => f.hit && f.tail < 0.97) && levelNow > 0.02;
+    for (const r of ripples) {
+      r.visible = splashing;
+      if (!splashing) continue;
+      const k = (t * 1.6 + r.userData.phase) % 1;
+      r.position.set(0, top + 0.004, 0);
+      r.scale.setScalar(0.12 + k * Math.min(0.7, (innerR(top) - 0.02) * 1.6));
+      r.material.opacity = 0.45 * (1 - k);
+    }
+    // the bright patch under the flask picks up the liquid's color
+    caustic.material.color.copy(mixU.uOld.value).lerp(mixU.uNew.value, 0.5).lerp(col.set("#fff7e8"), 0.35);
+    caustic.material.opacity = 0.08 + levelNow * 0.14;
 
     // bubbles rise through the liquid
     const nb = soapy ? Math.min(B, Math.round(20 * fizz)) : 0;
@@ -672,7 +818,7 @@ export function createLabScene(canvas, { reducedMotion }) {
     camera.position.set(camBase.x + pointer.x * 0.5, camBase.y - pointer.y * 0.25, camBase.z);
     camera.lookAt(look);
     // only draw when something actually changed: a pour, rising liquid, bubbles, foam, or the camera moving
-    const busy = pourJob || foamT >= 0 || mixing || dyeing || graining || soapy || Math.abs(levelTo - levelNow) > 0.0005 || fizz > 1 ||
+    const busy = pourJob || foamT >= 0 || mixing || flowing || pluming || soapy || Math.abs(levelTo - levelNow) > 0.0005 || fizz > 1 ||
       camera.position.distanceToSquared(lastCam) > 1e-6 || framesLeft > 0;
     if (busy) {
       if (pourJob || foamT >= 0) renderer.shadowMap.needsUpdate = true;
@@ -695,14 +841,10 @@ export function createLabScene(canvas, { reducedMotion }) {
       const bottle = makeBottle(kind, color);
       bottle.rotation.y = -0.5;
       scene.add(bottle);
-      const sc = kind === "dye" ? color : STREAM_COLOR[kind];
-      streamMat.color.set(kind === "peroxide" ? "#dfefff" : sc);
-      streamMat.opacity = kind === "peroxide" ? 0.55 : 0.92;
       const from = new THREE.Vector3(3.6, 3.4, 0.4), at = new THREE.Vector3(0.5, NECK_Y + lift + 0.42, 0.05);
-      const tilt = kind === "dye" ? 2.45 : 2.05;
-      const thick = kind === "dye" ? 0.016 : kind === "soap" ? 0.03 : 0.04;
-      let time = 0;
-      const mouth = new THREE.Vector3(), neck = new THREE.Vector3(0, NECK_Y + lift + 0.05, 0);
+      const tilt = 2.05;
+      let time = 0, flow = null;
+      const mouth = new THREE.Vector3();
       pourJob = {
         step(dt) {
           time += dt;
@@ -712,31 +854,30 @@ export function createLabScene(canvas, { reducedMotion }) {
           bottle.position.lerpVectors(from, at, tIn);
           if (tBack > 0) bottle.position.lerpVectors(at, from, tBack);
           bottle.rotation.z = tilt * (tTip - tBack) + 0.25 * tIn;
-          const flowing = time > 0.72 && time < 1.72;
-          stream.visible = flowing;
-          if (flowing) {
+          if (!flow && time > 0.72) {
+            flow = kind === "peroxide"
+              ? startFlow({ color: "#dcecff", opacity: 0.42, thick: 0.042, gloss: 1, wobble: 0.04 })
+              : startFlow({ color: STREAM_COLOR.soap, opacity: 0.95, thick: 0.03, gloss: 0.85, wobble: 0.03 });
+          }
+          if (flow) {
+            if (time > 1.72) flow.stop();
             bottle.updateMatrixWorld();
             mouth.set(0, 0, 0).applyMatrix4(bottle.matrixWorld);
-            const surface = Math.max(BOTTOM_Y + 0.02, BOTTOM_Y + levelNow * (FULL_Y - BOTTOM_Y)) + lift;
-            // the stream arcs from the mouth, falls into the neck, then straight down to the surface
-            const mid = new THREE.Vector3((mouth.x + neck.x) * 0.5, (mouth.y + neck.y) * 0.5 + 0.08, (mouth.z + neck.z) * 0.5);
-            const curve = new THREE.CatmullRomCurve3([mouth.clone(), mid, neck.clone(), new THREE.Vector3(0, surface, 0)]);
-            const tStart = clamp01((time - 0.72) / 0.18), tEnd = clamp01((1.72 - time) / 0.12);
-            stream.geometry.dispose();
-            stream.geometry = new THREE.TubeGeometry(curve, 48, thick * Math.min(tStart, tEnd, 1) + 0.004, 10);
-            if (time > 0.85) levelTo = toLevel;
+            if (!flow.stopped) flow.aim(mouth, surfaceWorld());
+            if (flow.hit) levelTo = toLevel;
           }
-          if (time > 2.25) {
-            stream.visible = false;
+          if (time > 2.25 && (!flow || flow.done)) {
             scene.remove(bottle);
             bottle.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.map?.dispose(); o.material.dispose(); } });
             pourJob = null;
+            levelTo = toLevel;
             resolve();
           }
         },
       };
     });
   }
+  const surfaceWorld = () => Math.max(BOTTOM_Y + 0.02, BOTTOM_Y + levelNow * (FULL_Y - BOTTOM_Y)) + lift;
 
   // the dropper tips over the neck and squeezes out three drops, which fall in and bloom
   function dripDye(hex, toLevel) {
@@ -747,8 +888,7 @@ export function createLabScene(canvas, { reducedMotion }) {
       scene.add(bottle);
       const from = new THREE.Vector3(3.6, 3.4, 0.4), at = new THREE.Vector3(0.02, NECK_Y + lift + 0.75, 0.02);
       const mouth = new THREE.Vector3();
-      const dropsAt = [0.8, 1.05, 1.3];
-      let time = 0, made = 0;
+      let time = 0, flow = null, landed = false;
       pourJob = {
         step(dt) {
           time += dt;
@@ -758,26 +898,32 @@ export function createLabScene(canvas, { reducedMotion }) {
           bottle.position.lerpVectors(from, at, tIn);
           if (tBack > 0) bottle.position.lerpVectors(at, from, tBack);
           bottle.rotation.z = Math.PI * (tTip - tBack) + 0.25 * tIn * (1 - tTip);
-          // a little squeeze each time a drop comes out
-          const squeeze = dropsAt.some((d) => time > d - 0.08 && time < d + 0.04);
-          bottle.scale.set(squeeze ? 1.12 : 1, squeeze ? 0.92 : 1, squeeze ? 1.12 : 1);
-          if (made < dropsAt.length && time >= dropsAt[made]) {
+          // squeezed the whole time the dye is running
+          const squeeze = time > 0.72 && time < 1.42 ? 1 : 0;
+          bottle.scale.set(1 + 0.1 * squeeze, 1 - 0.07 * squeeze, 1 + 0.1 * squeeze);
+          if (!flow && time > 0.75) flow = startFlow({ color: hex, opacity: 0.96, thick: 0.013, gloss: 0.75, wobble: 0.06 });
+          if (flow) {
+            if (time > 1.4) flow.stop();
             bottle.updateMatrixWorld();
             mouth.set(0, 0, 0).applyMatrix4(bottle.matrixWorld);
-            spawnDrop(hex, mouth);
-            made++;
-            if (made === 1) { levelTo = toLevel; }
-            if (made === 2) {
+            if (!flow.stopped) flow.aim(mouth, surfaceWorld());
+            if (flow.hit && !landed) {
+              landed = true;
+              levelTo = toLevel;
+              const ph = Math.random() * Math.PI * 2;
+              startPlume(hex, { opacity: 0.62, phase: ph, swirl: 1, width: 1 });
+              startPlume(hex, { opacity: 0.45, phase: ph + 2.6, swirl: -0.8, width: 0.7, life: 3 });
               dyeList.push(hex);
               const blend = new THREE.Color(dyeList[0]);
               dyeList.slice(1).forEach((c) => blend.lerp(new THREE.Color(c), 0.45));
-              mixTo("#" + blend.getHexString(), 0.93, 2.4);
+              mixTo("#" + blend.getHexString(), 0.93, 2.6);
             }
           }
-          if (time > 2.1) {
+          if (time > 2.1 && (!flow || flow.done)) {
             scene.remove(bottle);
             bottle.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.map?.dispose(); o.material.dispose(); } });
             pourJob = null;
+            levelTo = toLevel;
             resolve();
           }
         },
@@ -795,7 +941,7 @@ export function createLabScene(canvas, { reducedMotion }) {
       const from = new THREE.Vector3(3.4, 3.8, 0.4), at = new THREE.Vector3(0.04, NECK_Y + lift + 0.42, 0.03);
       const mouth = new THREE.Vector3();
       const flapV = new THREE.Vector3(0.9, 1.6, 0.4);
-      let time = 0, acc = 0;
+      let time = 0, flow = null, landed = false;
       pourJob = {
         step(dt) {
           time += dt;
@@ -813,18 +959,25 @@ export function createLabScene(canvas, { reducedMotion }) {
           }
           const shake = time > 1.4 && time < 2.5 ? Math.sin(time * 38) * 0.06 : 0;
           packet.rotation.z = -0.15 * tIn * (1 - tTip) + 2.35 * (tTip - tBack) + shake;
-          if (time > 1.3 && time < 2.55) {
+          if (!flow && time > 1.3) flow = startFlow({ color: "#c4934f", opacity: 1, thick: 0.024, gloss: 0, grain: 1, wobble: 0.14 });
+          if (flow) {
+            if (time > 2.55) flow.stop();
             packet.updateMatrixWorld();
             mouth.set(0, 0, 0).applyMatrix4(packet.matrixWorld);
-            acc += dt * 120;
-            const n = Math.floor(acc); acc -= n;
-            spawnGrains(mouth, n);
-            if (time > 1.6) levelTo = toLevel;
+            if (!flow.stopped) flow.aim(mouth, surfaceWorld());
+            if (flow.hit && !landed) {
+              landed = true;
+              levelTo = toLevel;
+              const ph = Math.random() * Math.PI * 2;
+              startPlume("#b98a4e", { opacity: 0.4, phase: ph, swirl: 0.7, width: 1.1, life: 3.6 });
+              startPlume("#d9b98a", { opacity: 0.3, phase: ph + 3, swirl: -0.6, width: 0.8, life: 3.2 });
+            }
           }
-          if (time > 3.15) {
+          if (time > 3.15 && (!flow || flow.done)) {
             scene.remove(packet);
             packet.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); [].concat(o.material).forEach((mm) => { mm.map?.dispose(); mm.dispose(); }); } });
             pourJob = null;
+            levelTo = toLevel;
             resolve();
           }
         },
@@ -862,7 +1015,9 @@ export function createLabScene(canvas, { reducedMotion }) {
       levelTo = 0; soapy = false; fizz = 1; foamT = -1; foam.visible = false; tip.visible = false;
       cloudTo = 0.04; mixQueue.length = 0; mixJob = null;
       mixU.uOld.value.set("#e6f3ff"); mixU.uNew.value.set("#e6f3ff"); mixU.uOldA.value = mixU.uNewA.value = 0.42; mixU.uFront.value = -10;
-      grain.length = 0; grains.count = 0; dyeList.length = 0;
+      dyeList.length = 0;
+      flows.forEach((f) => f.dispose()); flows.length = 0;
+      plumes.forEach((p) => { flaskGroup.remove(p.mesh); p.tube.geo.dispose(); p.mat.dispose(); }); plumes.length = 0;
     },
     dispose() {
       disposed = true;
